@@ -85315,6 +85315,10 @@ var token = process.env["TELEGRAM_BOT_TOKEN"];
 if (!token) {
   throw new Error("TELEGRAM_BOT_TOKEN environment variable is required.");
 }
+if (process.env["NODE_ENV"] !== "production" && !process.env["RENDER"]) {
+  logger.warn("\u26D4 Bot \u09B6\u09C1\u09A7\u09C1 Render production-\u098F \u099A\u09B2\u09AC\u09C7\u0964 Replit-\u098F polling \u09AC\u09A8\u09CD\u09A7\u0964");
+  process.exit(0);
+}
 loadStore();
 var bot = new import_node_telegram_bot_api.default(token, {
   polling: {
