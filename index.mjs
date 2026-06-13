@@ -85335,6 +85335,45 @@ function registerCommands(bot2) {
     );
     setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 3e4);
   });
+  bot2.onText(/^\/pending(@\w+)?$/i, async (msg) => {
+    if (!msg.from || msg.chat.type === "private") return;
+    const admins = await getGroupAdmins(bot2, msg.chat.id);
+    if (!admins.has(msg.from.id)) {
+      await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
+      return;
+    }
+    await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
+    const all = getAllUsers();
+    const pending = Object.entries(all).filter(([id, u]) => {
+      if (u.banned) return false;
+      if (CONFIG.OWNER_IDS.includes(Number(id))) return false;
+      return u.invites < CONFIG.REQUIRED_INVITES;
+    }).sort(([, a], [, b]) => b.invites - a.invites);
+    if (pending.length === 0) {
+      const r = await bot2.sendMessage(
+        msg.chat.id,
+        `\u2705 \u09B8\u09AC member \u0987\u09A8\u09AD\u09BE\u0987\u099F \u0995\u09CB\u099F\u09BE \u09AA\u09C2\u09B0\u09A3 \u0995\u09B0\u09C7\u099B\u09C7\u09A8!`,
+        { parse_mode: "HTML" }
+      );
+      setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 1e4);
+      return;
+    }
+    const rows = pending.slice(0, 20).map(([id, u]) => {
+      const name = u.firstName ? `<a href="tg://user?id=${id}">${u.firstName}</a>` : `<code>${id}</code>`;
+      const remaining = CONFIG.REQUIRED_INVITES - u.invites;
+      return `\u{1F512} ${name} \u2014 ${u.invites}/${CONFIG.REQUIRED_INVITES} (\u0986\u09B0\u0993 <b>${remaining}</b> \u099C\u09A8 \u09AC\u09BE\u0995\u09BF)`;
+    });
+    const reply = await bot2.sendMessage(
+      msg.chat.id,
+      `\u{1F512} <b>\u098F\u0996\u09A8\u09CB invite \u0995\u09CB\u099F\u09BE \u09AA\u09C2\u09B0\u09A3 \u0995\u09B0\u09C7\u09A8\u09A8\u09BF: ${pending.length} \u099C\u09A8</b>
+
+` + rows.join("\n") + (pending.length > 20 ? `
+
+<i>...\u098F\u09AC\u0982 \u0986\u09B0\u0993 ${pending.length - 20} \u099C\u09A8</i>` : ""),
+      { parse_mode: "HTML" }
+    );
+    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 3e4);
+  });
   bot2.onText(/^\/invitelog(@\w+)?(?:\s+(\d+))?$/i, async (msg, match) => {
     if (!msg.from || msg.chat.type === "private") return;
     const admins = await getGroupAdmins(bot2, msg.chat.id);
