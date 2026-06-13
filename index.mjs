@@ -84585,17 +84585,18 @@ var FULLY_RESTRICTED = {
 var LINK_REGEX = /(?:https?:\/\/|www\.)[^\s]+|t\.me\/[^\s]+|(?<![a-zA-Z0-9_])@[a-zA-Z0-9_]{5,}/g;
 
 // src/bot/store.ts
-var store = { users: {}, lastSaved: Date.now() };
+var store = { users: {}, inviteLog: [], lastSaved: Date.now() };
 function loadStore() {
   try {
     if (fs.existsSync(CONFIG.STORE_PATH)) {
       const raw = fs.readFileSync(CONFIG.STORE_PATH, "utf-8");
-      store = JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      store = { inviteLog: [], ...parsed };
       logger.info({ users: Object.keys(store.users).length }, "Store loaded");
     }
   } catch (err) {
     logger.warn({ err }, "Could not load store, starting fresh");
-    store = { users: {}, lastSaved: Date.now() };
+    store = { users: {}, inviteLog: [], lastSaved: Date.now() };
   }
 }
 function saveStore() {
@@ -84621,9 +84622,22 @@ function updateUser(userId, data) {
   saveStore();
   return user;
 }
-function addInvites(userId, count) {
-  const user = getUser(userId);
-  return updateUser(userId, { invites: user.invites + count });
+function addInvites(inviterId, count, inviterName, invitees) {
+  const user = getUser(inviterId);
+  if (inviterName && invitees) {
+    for (const inv of invitees) {
+      store.inviteLog.push({
+        inviterId,
+        inviterName,
+        inviteeId: inv.id,
+        inviteeName: inv.name,
+        at: Date.now()
+      });
+      updateUser(inv.id, { invitedBy: inviterId });
+    }
+    if (store.inviteLog.length > 500) store.inviteLog = store.inviteLog.slice(-500);
+  }
+  return updateUser(inviterId, { invites: user.invites + count });
 }
 function addWarning(userId) {
   const user = getUser(userId);
@@ -84640,6 +84654,9 @@ function setBanned(userId, banned) {
 }
 function getAllUsers() {
   return store.users;
+}
+function getInviteLog() {
+  return store.inviteLog;
 }
 
 // src/bot/utils.ts
@@ -84753,6 +84770,7 @@ function registerHandlers(bot2) {
     const chatId = msg.chat.id;
     if (!msg.new_chat_members) return;
     await deleteMessageSafe(bot2, chatId, msg.message_id);
+    const admins = await getGroupAdmins(bot2, chatId);
     for (const newMember of msg.new_chat_members) {
       if (newMember.is_bot) continue;
       const name = getDisplayName(newMember);
@@ -84761,23 +84779,35 @@ function registerHandlers(bot2) {
         firstName: newMember.first_name,
         joinedAt: Date.now()
       });
+      const isAdmin = admins.has(newMember.id) || CONFIG.OWNER_IDS.includes(newMember.id);
       try {
-        await bot2.sendMessage(
-          chatId,
-          `\u{1F389} <b>${CONFIG.GROUP_NAME}</b>-\u098F \u09B8\u09CD\u09AC\u09BE\u0997\u09A4\u09AE, <a href="tg://user?id=${newMember.id}">${name}</a>!
+        if (isAdmin) {
+          await bot2.sendMessage(
+            chatId,
+            `\u{1F451} <b>\u09B8\u09CD\u09AC\u09BE\u0997\u09A4\u09AE, \u0985\u09CD\u09AF\u09BE\u09A1\u09AE\u09BF\u09A8!</b> <a href="tg://user?id=${newMember.id}">${name}</a>
+\u{1F4AC} \u09AA\u09C7\u0987\u09A1 \u0997\u09CD\u09B0\u09C1\u09AA \u0995\u09BF\u09A8\u09A4\u09C7 \u0987\u09A8\u09AC\u0995\u09CD\u09B8 \u0995\u09B0\u09C1\u09A8: ${CONFIG.PROMO_USERNAME}`,
+            { parse_mode: "HTML" }
+          );
+        } else {
+          await bot2.sendMessage(
+            chatId,
+            `\u{1F389} <b>${CONFIG.GROUP_NAME}</b>-\u098F \u09B8\u09CD\u09AC\u09BE\u0997\u09A4\u09AE, <a href="tg://user?id=${newMember.id}">${name}</a>!
 
 \u{1F4B8} \u09AA\u09C7\u0987\u09A1 \u0997\u09CD\u09B0\u09C1\u09AA \u0995\u09BF\u09A8\u09A4\u09C7 \u0987\u09A8\u09AC\u0995\u09CD\u09B8 \u0995\u09B0\u09C1\u09A8: ${CONFIG.PROMO_USERNAME}
 \u26A0\uFE0F \u0997\u09CD\u09B0\u09C1\u09AA\u09C7 \u099F\u09C7\u0995\u09CD\u09B8\u099F \u0995\u09B0\u09A4\u09C7 \u0986\u09B0\u0993 <b>\u09E9 \u099C\u09A8\u0995\u09C7</b> \u0985\u09CD\u09AF\u09BE\u09A1 \u0995\u09B0\u09C1\u09A8!`,
-          { parse_mode: "HTML" }
-        );
+            { parse_mode: "HTML" }
+          );
+        }
       } catch (err) {
         logger.warn({ err }, "Could not send welcome message");
       }
     }
     if (msg.from && !msg.from.is_bot) {
-      const count = msg.new_chat_members.filter((m) => !m.is_bot).length;
+      const newHumans = msg.new_chat_members.filter((m) => !m.is_bot);
+      const count = newHumans.length;
       if (count > 0) {
-        const updated = addInvites(msg.from.id, count);
+        const invitees = newHumans.map((m) => ({ id: m.id, name: getDisplayName(m) }));
+        const updated = addInvites(msg.from.id, count, getDisplayName(msg.from), invitees);
         logger.info(
           { userId: msg.from.id, total: updated.invites },
           "Invite credit added"
@@ -85301,6 +85331,41 @@ function registerCommands(bot2) {
 
 <b>\u{1F4B3} \u0995\u09CD\u09B0\u09C7\u09A1\u09BF\u099F</b>
 /addcredit [\u09AA\u09B0\u09BF\u09AE\u09BE\u09A3?] \u2014 \u0987\u09A8\u09AD\u09BE\u0987\u099F \u0995\u09CD\u09B0\u09C7\u09A1\u09BF\u099F \u09AF\u09CB\u0997 \u0995\u09B0\u09C1\u09A8`,
+      { parse_mode: "HTML" }
+    );
+    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 3e4);
+  });
+  bot2.onText(/^\/invitelog(@\w+)?(?:\s+(\d+))?$/i, async (msg, match) => {
+    if (!msg.from || msg.chat.type === "private") return;
+    const admins = await getGroupAdmins(bot2, msg.chat.id);
+    if (!admins.has(msg.from.id)) {
+      await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
+      return;
+    }
+    await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
+    const log = getInviteLog();
+    const filterUserId = match?.[2] ? parseInt(match[2], 10) : null;
+    const filtered = filterUserId ? log.filter((e) => e.inviterId === filterUserId) : log.slice(-20);
+    if (filtered.length === 0) {
+      const r = await bot2.sendMessage(
+        msg.chat.id,
+        filterUserId ? `\u{1F4CB} \u0987\u0989\u099C\u09BE\u09B0 <code>${filterUserId}</code> \u098F\u0996\u09A8\u09CB \u0995\u09BE\u0989\u0995\u09C7 add \u0995\u09B0\u09C7\u09A8\u09A8\u09BF\u0964` : `\u{1F4CB} \u098F\u0996\u09A8\u09CB \u0995\u09CB\u09A8\u09CB invite \u09B0\u09C7\u0995\u09B0\u09CD\u09A1 \u09A8\u09C7\u0987\u0964`,
+        { parse_mode: "HTML" }
+      );
+      setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 1e4);
+      return;
+    }
+    const rows = filtered.slice(-15).reverse().map((e) => {
+      const d = new Date(e.at);
+      const time = `${d.getDate()}/${d.getMonth() + 1} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+      return `\u{1F464} <a href="tg://user?id=${e.inviterId}">${e.inviterName}</a> \u2192 <a href="tg://user?id=${e.inviteeId}">${e.inviteeName}</a> <i>${time}</i>`;
+    });
+    const title = filterUserId ? `\u{1F4CB} <b>\u0987\u0989\u099C\u09BE\u09B0 ${filterUserId}-\u098F\u09B0 invite \u09A4\u09BE\u09B2\u09BF\u0995\u09BE</b>` : `\u{1F4CB} <b>\u09B8\u09B0\u09CD\u09AC\u09B6\u09C7\u09B7 \u09E7\u09EB\u099F\u09BF invite</b>`;
+    const reply = await bot2.sendMessage(
+      msg.chat.id,
+      `${title}
+
+${rows.join("\n")}`,
       { parse_mode: "HTML" }
     );
     setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 3e4);
