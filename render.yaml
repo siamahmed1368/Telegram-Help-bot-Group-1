@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: group-guard-bot
+    runtime: node
+    region: singapore
+    plan: free
+    buildCommand: NODE_ENV=development npx pnpm@10 install --no-frozen-lockfile && cd artifacts/api-server && NODE_ENV=development npx pnpm@10 run build
+    startCommand: node --enable-source-maps artifacts/api-server/dist/index.mjs
+    envVars:
+      - key: PORTtion
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+
+        value: 10000
+      - key: NODE_ENV
+        value: produc
