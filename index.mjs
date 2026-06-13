@@ -84886,8 +84886,17 @@ function registerHandlers(bot2) {
 }
 
 // src/bot/commands.ts
+function getTarget(msg, match) {
+  if (msg.reply_to_message?.from) {
+    const u = msg.reply_to_message.from;
+    return { id: u.id, name: getDisplayName(u) };
+  }
+  const idStr = match?.[1];
+  if (idStr) return { id: parseInt(idStr, 10), name: `#${idStr}` };
+  return null;
+}
 function registerCommands(bot2) {
-  bot2.onText(/^\/myinvites$/i, async (msg) => {
+  bot2.onText(/^\/myinvites(@\w+)?$/i, async (msg) => {
     if (!msg.from || msg.chat.type === "private") return;
     const user = getUser(msg.from.id);
     const name = getDisplayName(msg.from);
@@ -84906,7 +84915,7 @@ function registerCommands(bot2) {
       15e3
     );
   });
-  bot2.onText(/^\/invites(?:\s+(\d+))?$/i, async (msg, match) => {
+  bot2.onText(/^\/invites(@\w+)?(?:\s+(\d+))?$/i, async (msg, match) => {
     if (!msg.from || msg.chat.type === "private") return;
     const admins = await getGroupAdmins(bot2, msg.chat.id);
     if (!admins.has(msg.from.id)) {
@@ -84914,10 +84923,12 @@ function registerCommands(bot2) {
       return;
     }
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
-    const targetId = match?.[1] ? parseInt(match[1], 10) : msg.from.id;
+    const t = getTarget(msg, match);
+    const targetId = t?.id ?? msg.from.id;
     const user = getUser(targetId);
-    const text = `\u{1F4CB} <b>\u0987\u0989\u099C\u09BE\u09B0 \u09A4\u09A5\u09CD\u09AF</b> [${targetId}]
+    const text = `\u{1F4CB} <b>\u0987\u0989\u099C\u09BE\u09B0 \u09A4\u09A5\u09CD\u09AF</b>
 
+\u{1F194} ID: <code>${targetId}</code>
 \u2705 \u09AE\u09CB\u099F \u0987\u09A8\u09AD\u09BE\u0987\u099F: <b>${user.invites}</b>
 \u26A0\uFE0F \u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE: <b>${user.warnings}/${CONFIG.MAX_WARNINGS}</b>
 \u{1F6AB} \u09AC\u09CD\u09AF\u09BE\u09A8: <b>${user.banned ? "\u09B9\u09CD\u09AF\u09BE\u0981" : "\u09A8\u09BE"}</b>
@@ -84930,7 +84941,7 @@ function registerCommands(bot2) {
       2e4
     );
   });
-  bot2.onText(/^\/addcredit\s+(\d+)(?:\s+(\d+))?$/i, async (msg, match) => {
+  bot2.onText(/^\/addcredit(@\w+)?(?:\s+(\d+))?(?:\s+(\d+))?$/i, async (msg, match) => {
     if (!msg.from || msg.chat.type === "private") return;
     const admins = await getGroupAdmins(bot2, msg.chat.id);
     if (!admins.has(msg.from.id)) {
@@ -84938,12 +84949,17 @@ function registerCommands(bot2) {
       return;
     }
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
-    const targetId = parseInt(match[1], 10);
-    const amount = match?.[2] ? parseInt(match[2], 10) : 1;
-    const updated = addInvites(targetId, amount);
+    const t = getTarget(msg, match);
+    if (!t) {
+      const r = await bot2.sendMessage(msg.chat.id, `\u274C \u0995\u09BE\u09B0\u09CB \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 reply \u0995\u09B0\u09C7 /addcredit \u09A6\u09BF\u09A8 \u0985\u09A5\u09AC\u09BE /addcredit [id] [\u09AA\u09B0\u09BF\u09AE\u09BE\u09A3] \u09B2\u09BF\u0996\u09C1\u09A8\u0964`, { parse_mode: "HTML" });
+      setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
+      return;
+    }
+    const amount = match?.[3] ? parseInt(match[3], 10) : match?.[2] && !msg.reply_to_message ? 1 : 1;
+    const updated = addInvites(t.id, amount);
     const reply = await bot2.sendMessage(
       msg.chat.id,
-      `\u2705 \u0987\u0989\u099C\u09BE\u09B0 <code>${targetId}</code>-\u0995\u09C7 <b>${amount}\u099F\u09BF</b> \u0987\u09A8\u09AD\u09BE\u0987\u099F \u0995\u09CD\u09B0\u09C7\u09A1\u09BF\u099F \u09A6\u09C7\u0993\u09AF\u09BC\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964
+      `\u2705 <b>${t.name}</b>-\u0995\u09C7 <b>${amount}\u099F\u09BF</b> \u0987\u09A8\u09AD\u09BE\u0987\u099F \u0995\u09CD\u09B0\u09C7\u09A1\u09BF\u099F \u09A6\u09C7\u0993\u09AF\u09BC\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964
 \u09AE\u09CB\u099F \u0987\u09A8\u09AD\u09BE\u0987\u099F: <b>${updated.invites}</b>`,
       { parse_mode: "HTML" }
     );
@@ -84952,7 +84968,7 @@ function registerCommands(bot2) {
       1e4
     );
   });
-  bot2.onText(/^\/warn\s+(\d+)(?:\s+(.+))?$/i, async (msg, match) => {
+  bot2.onText(/^\/warn(@\w+)?(?:\s+(\d+))?(?:\s+(.+))?$/i, async (msg, match) => {
     if (!msg.from || msg.chat.type === "private") return;
     const admins = await getGroupAdmins(bot2, msg.chat.id);
     if (!admins.has(msg.from.id)) {
@@ -84960,55 +84976,48 @@ function registerCommands(bot2) {
       return;
     }
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
-    const targetId = parseInt(match[1], 10);
-    const reason = match?.[2] ?? "\u0995\u09CB\u09A8\u09CB \u0995\u09BE\u09B0\u09A3 \u0989\u09B2\u09CD\u09B2\u09C7\u0996 \u0995\u09B0\u09BE \u09B9\u09AF\u09BC\u09A8\u09BF";
-    const user = getUser(targetId);
+    const t = getTarget(msg, match);
+    if (!t) {
+      const r = await bot2.sendMessage(msg.chat.id, `\u274C \u0995\u09BE\u09B0\u09CB \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 reply \u0995\u09B0\u09C7 /warn \u09A6\u09BF\u09A8\u0964`, { parse_mode: "HTML" });
+      setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
+      return;
+    }
+    const reason = match?.[3] ?? "\u0995\u09CB\u09A8\u09CB \u0995\u09BE\u09B0\u09A3 \u0989\u09B2\u09CD\u09B2\u09C7\u0996 \u0995\u09B0\u09BE \u09B9\u09AF\u09BC\u09A8\u09BF";
+    const user = getUser(t.id);
     const newWarnings = user.warnings + 1;
-    updateUser(targetId, { warnings: newWarnings });
+    updateUser(t.id, { warnings: newWarnings });
     if (newWarnings >= CONFIG.MAX_WARNINGS) {
-      const unmuteDate = new Date(
-        Date.now() + CONFIG.MUTE_DURATION_HOURS * 36e5
-      );
+      const unmuteDate = new Date(Date.now() + CONFIG.MUTE_DURATION_HOURS * 36e5);
       try {
-        await bot2.restrictChatMember(msg.chat.id, targetId, {
+        await bot2.restrictChatMember(msg.chat.id, t.id, {
           permissions: FULLY_RESTRICTED,
           until_date: Math.floor(unmuteDate.getTime() / 1e3)
         });
-        updateUser(targetId, {
-          mutedUntil: unmuteDate.getTime(),
-          warnings: 0
-        });
+        updateUser(t.id, { mutedUntil: unmuteDate.getTime(), warnings: 0 });
       } catch (err) {
         logger.warn({ err }, "Could not mute on max warnings");
       }
       const reply = await bot2.sendMessage(
         msg.chat.id,
-        `\u{1FA90} <b>\u0997\u09CD\u09B0\u09C1\u09AA \u0997\u09BE\u09B0\u09CD\u09A1</b> \u{1F6AB}
-\u0987\u0989\u099C\u09BE\u09B0 <code>${targetId}</code> \u09B8\u09B0\u09CD\u09AC\u09CB\u099A\u09CD\u099A \u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE\u09AF\u09BC \u09AA\u09CC\u0981\u099B\u09C7\u099B\u09C7\u09A8\u0964
+        `\u{1F6AB} <b>${t.name}</b> \u09B8\u09B0\u09CD\u09AC\u09CB\u099A\u09CD\u099A \u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE\u09AF\u09BC \u09AA\u09CC\u0981\u099B\u09C7\u099B\u09C7\u09A8!
 \u0985\u09CD\u09AF\u09BE\u0995\u09B6\u09A8: \u09AE\u09BF\u0989\u099F \u{1F507} \u0995\u09B0\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7 ${formatDate(unmuteDate)} \u09A4\u09BE\u09B0\u09BF\u0996 ${formatTime(unmuteDate)} \u09AA\u09B0\u09CD\u09AF\u09A8\u09CD\u09A4\u0964
 
 \u{1F4AC} \u09AA\u09C7\u0987\u09A1 \u0997\u09CD\u09B0\u09C1\u09AA \u0995\u09BF\u09A8\u09B2\u09C7 \u09AE\u09C7\u09B8\u09C7\u099C \u09A6\u09BF\u09A8: ${CONFIG.PROMO_USERNAME}`,
         { parse_mode: "HTML" }
       );
-      setTimeout(
-        () => deleteMessageSafe(bot2, msg.chat.id, reply.message_id),
-        15e3
-      );
+      setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 15e3);
     } else {
       const reply = await bot2.sendMessage(
         msg.chat.id,
-        `\u26A0\uFE0F \u0987\u0989\u099C\u09BE\u09B0 <code>${targetId}</code>-\u0995\u09C7 \u09B8\u09A4\u09B0\u09CD\u0995 \u0995\u09B0\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7
+        `\u26A0\uFE0F <b>${t.name}</b>-\u0995\u09C7 \u09B8\u09A4\u09B0\u09CD\u0995 \u0995\u09B0\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7
 \u0995\u09BE\u09B0\u09A3: ${reason}
 \u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE: <b>${newWarnings}/${CONFIG.MAX_WARNINGS}</b>`,
         { parse_mode: "HTML" }
       );
-      setTimeout(
-        () => deleteMessageSafe(bot2, msg.chat.id, reply.message_id),
-        12e3
-      );
+      setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 12e3);
     }
   });
-  bot2.onText(/^\/resetwarn\s+(\d+)$/i, async (msg, match) => {
+  bot2.onText(/^\/resetwarn(@\w+)?(?:\s+(\d+))?$/i, async (msg, match) => {
     if (!msg.from || msg.chat.type === "private") return;
     const admins = await getGroupAdmins(bot2, msg.chat.id);
     if (!admins.has(msg.from.id)) {
@@ -85016,20 +85025,22 @@ function registerCommands(bot2) {
       return;
     }
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
-    const targetId = parseInt(match[1], 10);
-    resetWarnings(targetId);
-    resetFlood(msg.chat.id, targetId);
+    const t = getTarget(msg, match);
+    if (!t) {
+      const r = await bot2.sendMessage(msg.chat.id, `\u274C \u0995\u09BE\u09B0\u09CB \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 reply \u0995\u09B0\u09C7 /resetwarn \u09A6\u09BF\u09A8\u0964`, { parse_mode: "HTML" });
+      setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
+      return;
+    }
+    resetWarnings(t.id);
+    resetFlood(msg.chat.id, t.id);
     const reply = await bot2.sendMessage(
       msg.chat.id,
-      `\u2705 \u0987\u0989\u099C\u09BE\u09B0 <code>${targetId}</code>-\u098F\u09B0 \u09B8\u09AC \u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE \u09AE\u09C1\u099B\u09C7 \u09A6\u09C7\u0993\u09AF\u09BC\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964`,
+      `\u2705 <b>${t.name}</b>-\u098F\u09B0 \u09B8\u09AC \u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE \u09AE\u09C1\u099B\u09C7 \u09A6\u09C7\u0993\u09AF\u09BC\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964`,
       { parse_mode: "HTML" }
     );
-    setTimeout(
-      () => deleteMessageSafe(bot2, msg.chat.id, reply.message_id),
-      8e3
-    );
+    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 8e3);
   });
-  bot2.onText(/^\/mute\s+(\d+)(?:\s+(\d+))?$/i, async (msg, match) => {
+  bot2.onText(/^\/mute(@\w+)?(?:\s+(\d+))?(?:\s+(\d+))?$/i, async (msg, match) => {
     if (!msg.from || msg.chat.type === "private") return;
     const admins = await getGroupAdmins(bot2, msg.chat.id);
     if (!admins.has(msg.from.id)) {
@@ -85037,29 +85048,31 @@ function registerCommands(bot2) {
       return;
     }
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
-    const targetId = parseInt(match[1], 10);
-    const hours = match?.[2] ? parseInt(match[2], 10) : CONFIG.MUTE_DURATION_HOURS;
+    const t = getTarget(msg, match);
+    if (!t) {
+      const r = await bot2.sendMessage(msg.chat.id, `\u274C \u0995\u09BE\u09B0\u09CB \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 reply \u0995\u09B0\u09C7 /mute \u09A6\u09BF\u09A8\u0964`, { parse_mode: "HTML" });
+      setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
+      return;
+    }
+    const hours = match?.[3] ? parseInt(match[3], 10) : CONFIG.MUTE_DURATION_HOURS;
     const unmuteDate = new Date(Date.now() + hours * 36e5);
     try {
-      await bot2.restrictChatMember(msg.chat.id, targetId, {
+      await bot2.restrictChatMember(msg.chat.id, t.id, {
         permissions: FULLY_RESTRICTED,
         until_date: Math.floor(unmuteDate.getTime() / 1e3)
       });
-      updateUser(targetId, { mutedUntil: unmuteDate.getTime() });
+      updateUser(t.id, { mutedUntil: unmuteDate.getTime() });
     } catch (err) {
       logger.warn({ err }, "Could not mute user");
     }
     const reply = await bot2.sendMessage(
       msg.chat.id,
-      `\u{1F507} \u0987\u0989\u099C\u09BE\u09B0 <code>${targetId}</code>-\u0995\u09C7 \u09AE\u09BF\u0989\u099F \u0995\u09B0\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7 ${formatDate(unmuteDate)} \u09A4\u09BE\u09B0\u09BF\u0996 ${formatTime(unmuteDate)} \u09AA\u09B0\u09CD\u09AF\u09A8\u09CD\u09A4\u0964`,
+      `\u{1F507} <b>${t.name}</b>-\u0995\u09C7 \u09AE\u09BF\u0989\u099F \u0995\u09B0\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7 ${formatDate(unmuteDate)} \u09A4\u09BE\u09B0\u09BF\u0996 ${formatTime(unmuteDate)} \u09AA\u09B0\u09CD\u09AF\u09A8\u09CD\u09A4\u0964`,
       { parse_mode: "HTML" }
     );
-    setTimeout(
-      () => deleteMessageSafe(bot2, msg.chat.id, reply.message_id),
-      12e3
-    );
+    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 12e3);
   });
-  bot2.onText(/^\/unmute\s+(\d+)$/i, async (msg, match) => {
+  bot2.onText(/^\/unmute(@\w+)?(?:\s+(\d+))?$/i, async (msg, match) => {
     if (!msg.from || msg.chat.type === "private") return;
     const admins = await getGroupAdmins(bot2, msg.chat.id);
     if (!admins.has(msg.from.id)) {
@@ -85067,9 +85080,14 @@ function registerCommands(bot2) {
       return;
     }
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
-    const targetId = parseInt(match[1], 10);
+    const t = getTarget(msg, match);
+    if (!t) {
+      const r = await bot2.sendMessage(msg.chat.id, `\u274C \u0995\u09BE\u09B0\u09CB \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 reply \u0995\u09B0\u09C7 /unmute \u09A6\u09BF\u09A8\u0964`, { parse_mode: "HTML" });
+      setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
+      return;
+    }
     try {
-      await bot2.restrictChatMember(msg.chat.id, targetId, {
+      await bot2.restrictChatMember(msg.chat.id, t.id, {
         permissions: {
           can_send_messages: true,
           can_send_audios: true,
@@ -85083,21 +85101,18 @@ function registerCommands(bot2) {
           can_add_web_page_previews: true
         }
       });
-      updateUser(targetId, { mutedUntil: void 0 });
+      updateUser(t.id, { mutedUntil: void 0 });
     } catch (err) {
       logger.warn({ err }, "Could not unmute user");
     }
     const reply = await bot2.sendMessage(
       msg.chat.id,
-      `\u{1F50A} \u0987\u0989\u099C\u09BE\u09B0 <code>${targetId}</code>-\u098F\u09B0 \u09AE\u09BF\u0989\u099F \u09A4\u09C1\u09B2\u09C7 \u09A8\u09C7\u0993\u09AF\u09BC\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964`,
+      `\u{1F50A} <b>${t.name}</b>-\u098F\u09B0 \u09AE\u09BF\u0989\u099F \u09A4\u09C1\u09B2\u09C7 \u09A8\u09C7\u0993\u09AF\u09BC\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964`,
       { parse_mode: "HTML" }
     );
-    setTimeout(
-      () => deleteMessageSafe(bot2, msg.chat.id, reply.message_id),
-      8e3
-    );
+    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 8e3);
   });
-  bot2.onText(/^\/ban\s+(\d+)(?:\s+(.+))?$/i, async (msg, match) => {
+  bot2.onText(/^\/ban(@\w+)?(?:\s+(\d+))?(?:\s+(.+))?$/i, async (msg, match) => {
     if (!msg.from || msg.chat.type === "private") return;
     const admins = await getGroupAdmins(bot2, msg.chat.id);
     if (!admins.has(msg.from.id)) {
@@ -85105,29 +85120,30 @@ function registerCommands(bot2) {
       return;
     }
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
-    const targetId = parseInt(match[1], 10);
-    const reason = match?.[2] ?? "\u0997\u09CD\u09B0\u09C1\u09AA\u09C7\u09B0 \u09A8\u09BF\u09AF\u09BC\u09AE \u09AD\u0999\u09CD\u0997 \u0995\u09B0\u09C7\u099B\u09C7\u09A8";
+    const t = getTarget(msg, match);
+    if (!t) {
+      const r = await bot2.sendMessage(msg.chat.id, `\u274C \u0995\u09BE\u09B0\u09CB \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 reply \u0995\u09B0\u09C7 /ban \u09A6\u09BF\u09A8\u0964`, { parse_mode: "HTML" });
+      setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
+      return;
+    }
+    const reason = match?.[3] ?? "\u0997\u09CD\u09B0\u09C1\u09AA\u09C7\u09B0 \u09A8\u09BF\u09AF\u09BC\u09AE \u09AD\u0999\u09CD\u0997 \u0995\u09B0\u09C7\u099B\u09C7\u09A8";
     try {
-      await bot2.banChatMember(msg.chat.id, targetId);
-      setBanned(targetId, true);
+      await bot2.banChatMember(msg.chat.id, t.id);
+      setBanned(t.id, true);
     } catch (err) {
       logger.warn({ err }, "Could not ban user");
     }
     const reply = await bot2.sendMessage(
       msg.chat.id,
-      `\u{1F6AB} <b>\u0987\u0989\u099C\u09BE\u09B0 \u09AC\u09CD\u09AF\u09BE\u09A8 \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u09A8</b>
-\u0987\u0989\u099C\u09BE\u09B0 <code>${targetId}</code>-\u0995\u09C7 \u09B8\u09CD\u09A5\u09BE\u09AF\u09BC\u09C0\u09AD\u09BE\u09AC\u09C7 \u09AC\u09CD\u09AF\u09BE\u09A8 \u0995\u09B0\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964
+      `\u{1F6AB} <b>${t.name}</b>-\u0995\u09C7 \u09B8\u09CD\u09A5\u09BE\u09AF\u09BC\u09C0\u09AD\u09BE\u09AC\u09C7 \u09AC\u09CD\u09AF\u09BE\u09A8 \u0995\u09B0\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964
 \u0995\u09BE\u09B0\u09A3: ${reason}
 
 \u{1F4AC} \u09AA\u09C7\u0987\u09A1 \u0997\u09CD\u09B0\u09C1\u09AA \u0995\u09BF\u09A8\u09B2\u09C7 \u09AE\u09C7\u09B8\u09C7\u099C \u09A6\u09BF\u09A8: ${CONFIG.PROMO_USERNAME}`,
       { parse_mode: "HTML" }
     );
-    setTimeout(
-      () => deleteMessageSafe(bot2, msg.chat.id, reply.message_id),
-      15e3
-    );
+    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 15e3);
   });
-  bot2.onText(/^\/unban\s+(\d+)$/i, async (msg, match) => {
+  bot2.onText(/^\/unban(@\w+)?(?:\s+(\d+))?$/i, async (msg, match) => {
     if (!msg.from || msg.chat.type === "private") return;
     const admins = await getGroupAdmins(bot2, msg.chat.id);
     if (!admins.has(msg.from.id)) {
@@ -85135,26 +85151,59 @@ function registerCommands(bot2) {
       return;
     }
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
-    const targetId = parseInt(match[1], 10);
+    const t = getTarget(msg, match);
+    if (!t) {
+      const r = await bot2.sendMessage(msg.chat.id, `\u274C /unban [user_id] \u09B2\u09BF\u0996\u09C1\u09A8\u0964 \u09AC\u09CD\u09AF\u09BE\u09A8 \u09B9\u0993\u09AF\u09BC\u09BE \u09AC\u09CD\u09AF\u0995\u09CD\u09A4\u09BF\u09B0 ID \u09B2\u09BE\u0997\u09AC\u09C7\u0964`, { parse_mode: "HTML" });
+      setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
+      return;
+    }
     try {
-      await bot2.unbanChatMember(msg.chat.id, targetId, {
-        only_if_banned: true
-      });
-      setBanned(targetId, false);
+      await bot2.unbanChatMember(msg.chat.id, t.id, { only_if_banned: true });
+      setBanned(t.id, false);
     } catch (err) {
       logger.warn({ err }, "Could not unban user");
     }
     const reply = await bot2.sendMessage(
       msg.chat.id,
-      `\u2705 \u0987\u0989\u099C\u09BE\u09B0 <code>${targetId}</code>-\u098F\u09B0 \u09AC\u09CD\u09AF\u09BE\u09A8 \u09A4\u09C1\u09B2\u09C7 \u09A8\u09C7\u0993\u09AF\u09BC\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964`,
+      `\u2705 <b>${t.name}</b>-\u098F\u09B0 \u09AC\u09CD\u09AF\u09BE\u09A8 \u09A4\u09C1\u09B2\u09C7 \u09A8\u09C7\u0993\u09AF\u09BC\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964`,
       { parse_mode: "HTML" }
     );
-    setTimeout(
-      () => deleteMessageSafe(bot2, msg.chat.id, reply.message_id),
-      8e3
-    );
+    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 8e3);
   });
-  bot2.onText(/^\/stats$/i, async (msg) => {
+  bot2.onText(/^\/kick(@\w+)?(?:\s+(\d+))?(?:\s+(.+))?$/i, async (msg, match) => {
+    if (!msg.from || msg.chat.type === "private") return;
+    const admins = await getGroupAdmins(bot2, msg.chat.id);
+    if (!admins.has(msg.from.id)) {
+      await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
+      return;
+    }
+    await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
+    const t = getTarget(msg, match);
+    if (!t) {
+      const r = await bot2.sendMessage(msg.chat.id, `\u274C \u0995\u09BE\u09B0\u09CB \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 reply \u0995\u09B0\u09C7 /kick \u09A6\u09BF\u09A8\u0964`, { parse_mode: "HTML" });
+      setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
+      return;
+    }
+    const reason = match?.[3] ?? "\u0997\u09CD\u09B0\u09C1\u09AA\u09C7\u09B0 \u09A8\u09BF\u09AF\u09BC\u09AE \u09AD\u0999\u09CD\u0997 \u0995\u09B0\u09C7\u099B\u09C7\u09A8";
+    try {
+      await bot2.banChatMember(msg.chat.id, t.id);
+      await bot2.unbanChatMember(msg.chat.id, t.id, { only_if_banned: true });
+    } catch (err) {
+      logger.warn({ err }, "Could not kick user");
+      const r = await bot2.sendMessage(msg.chat.id, `\u274C <b>${t.name}</b>-\u0995\u09C7 \u0995\u09BF\u0995 \u0995\u09B0\u09BE \u09B8\u09AE\u09CD\u09AD\u09AC \u09B9\u09AF\u09BC\u09A8\u09BF\u0964 \u09AC\u099F\u09C7\u09B0 Admin \u09AA\u09BE\u09B0\u09AE\u09BF\u09B6\u09A8 \u099A\u09C7\u0995 \u0995\u09B0\u09C1\u09A8\u0964`, { parse_mode: "HTML" });
+      setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
+      return;
+    }
+    const reply = await bot2.sendMessage(
+      msg.chat.id,
+      `\u{1F462} <b>${t.name}</b>-\u0995\u09C7 \u0997\u09CD\u09B0\u09C1\u09AA \u09A5\u09C7\u0995\u09C7 \u09AC\u09C7\u09B0 \u0995\u09B0\u09C7 \u09A6\u09C7\u0993\u09AF\u09BC\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964
+\u0995\u09BE\u09B0\u09A3: ${reason}
+<i>\u09A4\u09BE\u09B0\u09BE \u0987\u09A8\u09AD\u09BE\u0987\u099F \u09B2\u09BF\u0982\u0995 \u09A6\u09BF\u09AF\u09BC\u09C7 \u09AA\u09C1\u09A8\u09B0\u09BE\u09AF\u09BC \u09AF\u09CB\u0997 \u09A6\u09BF\u09A4\u09C7 \u09AA\u09BE\u09B0\u09AC\u09C7\u09A8\u0964</i>`,
+      { parse_mode: "HTML" }
+    );
+    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 15e3);
+  });
+  bot2.onText(/^\/stats(@\w+)?$/i, async (msg) => {
     if (!msg.from || msg.chat.type === "private") return;
     const admins = await getGroupAdmins(bot2, msg.chat.id);
     if (!admins.has(msg.from.id)) {
@@ -85164,13 +85213,9 @@ function registerCommands(bot2) {
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
     const all = getAllUsers();
     const entries = Object.entries(all);
-    const unlocked = entries.filter(
-      ([, u]) => u.invites >= CONFIG.REQUIRED_INVITES
-    ).length;
+    const unlocked = entries.filter(([, u]) => u.invites >= CONFIG.REQUIRED_INVITES).length;
     const banned = entries.filter(([, u]) => u.banned).length;
-    const muted = entries.filter(
-      ([, u]) => u.mutedUntil && u.mutedUntil > Date.now()
-    ).length;
+    const muted = entries.filter(([, u]) => u.mutedUntil && u.mutedUntil > Date.now()).length;
     const warned = entries.filter(([, u]) => u.warnings > 0).length;
     const reply = await bot2.sendMessage(
       msg.chat.id,
@@ -85183,12 +85228,9 @@ function registerCommands(bot2) {
 \u{1F6AB} \u09AC\u09CD\u09AF\u09BE\u09A8 \u0995\u09B0\u09BE \u09B8\u09A6\u09B8\u09CD\u09AF: <b>${banned}</b>`,
       { parse_mode: "HTML" }
     );
-    setTimeout(
-      () => deleteMessageSafe(bot2, msg.chat.id, reply.message_id),
-      2e4
-    );
+    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 2e4);
   });
-  bot2.onText(/^\/leaderboard$/i, async (msg) => {
+  bot2.onText(/^\/leaderboard(@\w+)?$/i, async (msg) => {
     if (!msg.from || msg.chat.type === "private") return;
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
     const all = getAllUsers();
@@ -85202,10 +85244,7 @@ function registerCommands(bot2) {
 \u098F\u0996\u09A8\u09CB \u0995\u09CB\u09A8\u09CB \u0987\u09A8\u09AD\u09BE\u0987\u099F \u09B0\u09C7\u0995\u09B0\u09CD\u09A1 \u09A8\u09C7\u0987\u0964 \u09AA\u09CD\u09B0\u09A5\u09AE \u09B9\u0993\u09AF\u09BC\u09BE\u09B0 \u09B8\u09C1\u09AF\u09CB\u0997 \u0986\u09AA\u09A8\u09BE\u09B0\u0987!`,
         { parse_mode: "HTML" }
       );
-      setTimeout(
-        () => deleteMessageSafe(bot2, msg.chat.id, reply2.message_id),
-        15e3
-      );
+      setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply2.message_id), 15e3);
       return;
     }
     const rows = ranked.map(([id, u], i) => {
@@ -85223,53 +85262,9 @@ function registerCommands(bot2) {
 \u{1F4AC} \u09AA\u09C7\u0987\u09A1 \u0997\u09CD\u09B0\u09C1\u09AA \u0995\u09BF\u09A8\u09B2\u09C7 \u09AE\u09C7\u09B8\u09C7\u099C \u09A6\u09BF\u09A8: ${CONFIG.PROMO_USERNAME}`,
       { parse_mode: "HTML" }
     );
-    setTimeout(
-      () => deleteMessageSafe(bot2, msg.chat.id, reply.message_id),
-      3e4
-    );
+    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 3e4);
   });
-  bot2.onText(/^\/kick\s+(\d+)(?:\s+(.+))?$/i, async (msg, match) => {
-    if (!msg.from || msg.chat.type === "private") return;
-    const admins = await getGroupAdmins(bot2, msg.chat.id);
-    if (!admins.has(msg.from.id)) {
-      await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
-      return;
-    }
-    await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
-    const targetId = parseInt(match[1], 10);
-    const reason = match?.[2] ?? "\u0997\u09CD\u09B0\u09C1\u09AA\u09C7\u09B0 \u09A8\u09BF\u09AF\u09BC\u09AE \u09AD\u0999\u09CD\u0997 \u0995\u09B0\u09C7\u099B\u09C7\u09A8";
-    try {
-      await bot2.banChatMember(msg.chat.id, targetId);
-      await bot2.unbanChatMember(msg.chat.id, targetId, { only_if_banned: true });
-    } catch (err) {
-      logger.warn({ err }, "Could not kick user");
-      const reply2 = await bot2.sendMessage(
-        msg.chat.id,
-        `\u274C \u0987\u0989\u099C\u09BE\u09B0 <code>${targetId}</code>-\u0995\u09C7 \u0995\u09BF\u0995 \u0995\u09B0\u09BE \u09B8\u09AE\u09CD\u09AD\u09AC \u09B9\u09AF\u09BC\u09A8\u09BF\u0964 \u09AC\u099F\u09C7\u09B0 \u09AA\u09BE\u09B0\u09AE\u09BF\u09B6\u09A8 \u099A\u09C7\u0995 \u0995\u09B0\u09C1\u09A8\u0964`,
-        { parse_mode: "HTML" }
-      );
-      setTimeout(
-        () => deleteMessageSafe(bot2, msg.chat.id, reply2.message_id),
-        8e3
-      );
-      return;
-    }
-    const reply = await bot2.sendMessage(
-      msg.chat.id,
-      `\u{1F462} <b>\u0987\u0989\u099C\u09BE\u09B0 \u0995\u09BF\u0995 \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u09A8</b>
-\u0987\u0989\u099C\u09BE\u09B0 <code>${targetId}</code>-\u0995\u09C7 \u0997\u09CD\u09B0\u09C1\u09AA \u09A5\u09C7\u0995\u09C7 \u09AC\u09C7\u09B0 \u0995\u09B0\u09C7 \u09A6\u09C7\u0993\u09AF\u09BC\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964
-\u0995\u09BE\u09B0\u09A3: ${reason}
-<i>\u09A4\u09BE\u09B0\u09BE \u0987\u09A8\u09AD\u09BE\u0987\u099F \u09B2\u09BF\u0982\u0995 \u09A6\u09BF\u09AF\u09BC\u09C7 \u09AA\u09C1\u09A8\u09B0\u09BE\u09AF\u09BC \u09AF\u09CB\u0997 \u09A6\u09BF\u09A4\u09C7 \u09AA\u09BE\u09B0\u09AC\u09C7\u09A8\u0964</i>
-
-\u{1F4AC} \u09AA\u09C7\u0987\u09A1 \u0997\u09CD\u09B0\u09C1\u09AA \u0995\u09BF\u09A8\u09B2\u09C7 \u09AE\u09C7\u09B8\u09C7\u099C \u09A6\u09BF\u09A8: ${CONFIG.PROMO_USERNAME}`,
-      { parse_mode: "HTML" }
-    );
-    setTimeout(
-      () => deleteMessageSafe(bot2, msg.chat.id, reply.message_id),
-      15e3
-    );
-  });
-  bot2.onText(/^\/help$/i, async (msg) => {
+  bot2.onText(/^\/help(@\w+)?$/i, async (msg) => {
     if (!msg.from || msg.chat.type === "private") return;
     const admins = await getGroupAdmins(bot2, msg.chat.id);
     if (!admins.has(msg.from.id)) {
@@ -85281,29 +85276,29 @@ function registerCommands(bot2) {
       msg.chat.id,
       `\u{1F916} <b>\u0997\u09CD\u09B0\u09C1\u09AA \u0997\u09BE\u09B0\u09CD\u09A1 \u2014 \u0985\u09CD\u09AF\u09BE\u09A1\u09AE\u09BF\u09A8 \u0995\u09AE\u09BE\u09A8\u09CD\u09A1</b>
 
+\u{1F4A1} <b>\u09B8\u09AC \u0995\u09AE\u09BE\u09A8\u09CD\u09A1 reply \u0995\u09B0\u09C7 \u09AC\u09CD\u09AF\u09AC\u09B9\u09BE\u09B0 \u0995\u09B0\u09C1\u09A8</b>
+\u0995\u09BE\u09B0\u09CB \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 reply \u09A6\u09BF\u09AF\u09BC\u09C7 command \u099F\u09BE\u0987\u09AA \u0995\u09B0\u09C1\u09A8
+
 <b>\u{1F4CB} \u09A4\u09A5\u09CD\u09AF \u09A6\u09C7\u0996\u09C1\u09A8</b>
-/myinvites \u2014 \u09A8\u09BF\u099C\u09C7\u09B0 \u0987\u09A8\u09AD\u09BE\u0987\u099F \u0995\u09BE\u0989\u09A8\u09CD\u099F \u09A6\u09C7\u0996\u09C1\u09A8
-/invites [id] \u2014 \u09AF\u09C7\u0995\u09CB\u09A8\u09CB \u0987\u0989\u099C\u09BE\u09B0\u09C7\u09B0 \u09A4\u09A5\u09CD\u09AF \u09A6\u09C7\u0996\u09C1\u09A8
-/leaderboard \u2014 \u09B6\u09C0\u09B0\u09CD\u09B7 \u09E7\u09E6 \u0987\u09A8\u09AD\u09BE\u0987\u099F\u09BE\u09B0 (\u09B8\u09AC\u09BE\u0987 \u09A6\u09C7\u0996\u09A4\u09C7 \u09AA\u09BE\u09B0\u09AC\u09C7)
+/myinvites \u2014 \u09A8\u09BF\u099C\u09C7\u09B0 \u0987\u09A8\u09AD\u09BE\u0987\u099F \u0995\u09BE\u0989\u09A8\u09CD\u099F
+/invites \u2014 reply \u0995\u09B0\u09C7 \u09AF\u09C7\u0995\u09CB\u09A8\u09CB \u0987\u0989\u099C\u09BE\u09B0\u09C7\u09B0 \u09A4\u09A5\u09CD\u09AF
+/leaderboard \u2014 \u09B6\u09C0\u09B0\u09CD\u09B7 \u09E7\u09E6 \u0987\u09A8\u09AD\u09BE\u0987\u099F\u09BE\u09B0
 /stats \u2014 \u0997\u09CD\u09B0\u09C1\u09AA\u09C7\u09B0 \u09B8\u09BE\u09AE\u0997\u09CD\u09B0\u09BF\u0995 \u09AA\u09B0\u09BF\u09B8\u0982\u0996\u09CD\u09AF\u09BE\u09A8
 
-<b>\u{1F6E1}\uFE0F \u09AE\u09A1\u09BE\u09B0\u09C7\u09B6\u09A8</b>
-/warn [id] [\u0995\u09BE\u09B0\u09A3] \u2014 \u09B8\u09A4\u09B0\u09CD\u0995 \u0995\u09B0\u09C1\u09A8
-/resetwarn [id] \u2014 \u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE \u09AE\u09C1\u099B\u09C7 \u09A6\u09BF\u09A8
-/mute [id] [\u0998\u09A3\u09CD\u099F\u09BE?] \u2014 \u09AE\u09BF\u0989\u099F \u0995\u09B0\u09C1\u09A8
-/unmute [id] \u2014 \u09AE\u09BF\u0989\u099F \u09A4\u09C1\u09B2\u09C1\u09A8
-/kick [id] [\u0995\u09BE\u09B0\u09A3?] \u2014 \u0995\u09BF\u0995 \u0995\u09B0\u09C1\u09A8 (\u09AA\u09C1\u09A8\u09B0\u09BE\u09AF\u09BC \u09AF\u09CB\u0997 \u09A6\u09BF\u09A4\u09C7 \u09AA\u09BE\u09B0\u09AC\u09C7)
-/ban [id] [\u0995\u09BE\u09B0\u09A3?] \u2014 \u09B8\u09CD\u09A5\u09BE\u09AF\u09BC\u09C0 \u09AC\u09CD\u09AF\u09BE\u09A8
+<b>\u{1F6E1}\uFE0F \u09AE\u09A1\u09BE\u09B0\u09C7\u09B6\u09A8 (reply \u0995\u09B0\u09C7 \u09AC\u09CD\u09AF\u09AC\u09B9\u09BE\u09B0 \u0995\u09B0\u09C1\u09A8)</b>
+/warn \u2014 \u09B8\u09A4\u09B0\u09CD\u0995 \u0995\u09B0\u09C1\u09A8
+/resetwarn \u2014 \u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE \u09AE\u09C1\u099B\u09C7 \u09A6\u09BF\u09A8
+/mute \u2014 \u09AE\u09BF\u0989\u099F \u0995\u09B0\u09C1\u09A8
+/unmute \u2014 \u09AE\u09BF\u0989\u099F \u09A4\u09C1\u09B2\u09C1\u09A8
+/kick \u2014 \u0995\u09BF\u0995 \u0995\u09B0\u09C1\u09A8
+/ban \u2014 \u09B8\u09CD\u09A5\u09BE\u09AF\u09BC\u09C0 \u09AC\u09CD\u09AF\u09BE\u09A8
 /unban [id] \u2014 \u09AC\u09CD\u09AF\u09BE\u09A8 \u09A4\u09C1\u09B2\u09C1\u09A8
 
 <b>\u{1F4B3} \u0995\u09CD\u09B0\u09C7\u09A1\u09BF\u099F</b>
-/addcredit [id] [\u09AA\u09B0\u09BF\u09AE\u09BE\u09A3?] \u2014 \u0987\u09A8\u09AD\u09BE\u0987\u099F \u0995\u09CD\u09B0\u09C7\u09A1\u09BF\u099F \u09AF\u09CB\u0997 \u0995\u09B0\u09C1\u09A8`,
+/addcredit [\u09AA\u09B0\u09BF\u09AE\u09BE\u09A3?] \u2014 \u0987\u09A8\u09AD\u09BE\u0987\u099F \u0995\u09CD\u09B0\u09C7\u09A1\u09BF\u099F \u09AF\u09CB\u0997 \u0995\u09B0\u09C1\u09A8`,
       { parse_mode: "HTML" }
     );
-    setTimeout(
-      () => deleteMessageSafe(bot2, msg.chat.id, reply.message_id),
-      3e4
-    );
+    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 3e4);
   });
   bot2.on("my_chat_member", (msg) => {
     invalidateAdminCache(msg.chat.id);
