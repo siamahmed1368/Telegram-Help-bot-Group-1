@@ -84563,7 +84563,9 @@ var CONFIG = {
   FLOOD_WINDOW_MS: 5e3,
   WARNING_AUTO_DELETE_MS: 12e3,
   STORE_PATH: "/tmp/bot_store.json",
-  ADMIN_CACHE_TTL_MS: 5 * 60 * 1e3
+  ADMIN_CACHE_TTL_MS: 5 * 60 * 1e3,
+  // গ্রুপ মালিকের Telegram User ID — সবসময় admin হিসেবে চিনবে
+  OWNER_IDS: [8239921711]
 };
 var FULLY_RESTRICTED = {
   can_send_messages: false,
@@ -84675,10 +84677,13 @@ async function getGroupAdmins(bot2, chatId) {
   try {
     const admins = await bot2.getChatAdministrators(chatId);
     const ids = new Set(admins.map((a) => a.user.id));
+    for (const ownerId of CONFIG.OWNER_IDS) ids.add(ownerId);
     adminCache.set(chatId, { admins: ids, ts: Date.now() });
     return ids;
   } catch {
-    return cached?.admins ?? /* @__PURE__ */ new Set();
+    const fallback = cached?.admins ?? /* @__PURE__ */ new Set();
+    for (const ownerId of CONFIG.OWNER_IDS) fallback.add(ownerId);
+    return fallback;
   }
 }
 function invalidateAdminCache(chatId) {
