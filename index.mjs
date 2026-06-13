@@ -84585,13 +84585,13 @@ var FULLY_RESTRICTED = {
 var LINK_REGEX = /(?:https?:\/\/|www\.)[^\s]+|t\.me\/[^\s]+|(?<![a-zA-Z0-9_])@[a-zA-Z0-9_]{5,}/g;
 
 // src/bot/store.ts
-var store = { users: {}, inviteLog: [], lastSaved: Date.now() };
+var store = { users: {}, inviteLog: [], whitelist: [], lastSaved: Date.now() };
 function loadStore() {
   try {
     if (fs.existsSync(CONFIG.STORE_PATH)) {
       const raw = fs.readFileSync(CONFIG.STORE_PATH, "utf-8");
       const parsed = JSON.parse(raw);
-      store = { inviteLog: [], ...parsed };
+      store = { inviteLog: [], whitelist: [], ...parsed };
       logger.info({ users: Object.keys(store.users).length }, "Store loaded");
     }
   } catch (err) {
@@ -84657,6 +84657,19 @@ function getAllUsers() {
 }
 function getInviteLog() {
   return store.inviteLog;
+}
+function addToWhitelist(userId) {
+  if (!store.whitelist.includes(userId)) {
+    store.whitelist.push(userId);
+    saveStore();
+  }
+}
+function removeFromWhitelist(userId) {
+  store.whitelist = store.whitelist.filter((id) => id !== userId);
+  saveStore();
+}
+function isWhitelisted(userId) {
+  return store.whitelist.includes(userId);
 }
 
 // src/bot/utils.ts
@@ -84825,10 +84838,20 @@ function registerHandlers(bot2) {
     const messageId = msg.message_id;
     if (!await isBotAdmin(bot2, chatId)) return;
     const text = msg.text ?? msg.caption ?? "";
-    if (text.startsWith("/")) return;
     const admins = await getGroupAdmins(bot2, chatId);
     const botId = await getBotId(bot2);
     if (admins.has(userId) || userId === botId) return;
+    if (text.startsWith("/")) {
+      await deleteMessageSafe(bot2, chatId, messageId);
+      await sendAutoDelete(
+        bot2,
+        chatId,
+        `\u26D4 <a href="tg://user?id=${userId}">${getDisplayName(msg.from)}</a>, \u09B6\u09C1\u09A7\u09C1\u09AE\u09BE\u09A4\u09CD\u09B0 \u0985\u09CD\u09AF\u09BE\u09A1\u09AE\u09BF\u09A8\u09B0\u09BE \u0995\u09AE\u09BE\u09A8\u09CD\u09A1 \u09AC\u09CD\u09AF\u09AC\u09B9\u09BE\u09B0 \u0995\u09B0\u09A4\u09C7 \u09AA\u09BE\u09B0\u09AC\u09C7\u09A8!`,
+        8e3
+      );
+      return;
+    }
+    if (isWhitelisted(userId)) return;
     const user = getUser(userId);
     updateUser(userId, {
       username: msg.from.username,
@@ -85385,6 +85408,51 @@ ${rows.join("\n")}`,
       { parse_mode: "HTML" }
     );
     setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 3e4);
+  });
+  bot2.onText(/^\/allow(@\w+)?$/i, async (msg) => {
+    if (!msg.from || msg.chat.type === "private") return;
+    const admins = await getGroupAdmins(bot2, msg.chat.id);
+    if (!admins.has(msg.from.id)) {
+      await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
+      return;
+    }
+    await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
+    const t = msg.reply_to_message?.from;
+    if (!t) {
+      const r = await bot2.sendMessage(msg.chat.id, `\u274C \u0995\u09BE\u09B0\u09CB \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 reply \u0995\u09B0\u09C7 /allow \u09A6\u09BF\u09A8\u0964`, { parse_mode: "HTML" });
+      setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
+      return;
+    }
+    addToWhitelist(t.id);
+    const reply = await bot2.sendMessage(
+      msg.chat.id,
+      `\u2705 <a href="tg://user?id=${t.id}">${getDisplayName(t)}</a>-\u0995\u09C7 whitelist-\u098F \u09AF\u09CB\u0997 \u0995\u09B0\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964
+\u09A4\u09BE\u09B0 \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 \u0986\u09B0 \u0995\u09CB\u09A8\u09CB \u09AC\u09BE\u09A7\u09BE \u09A5\u09BE\u0995\u09AC\u09C7 \u09A8\u09BE\u0964`,
+      { parse_mode: "HTML" }
+    );
+    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 1e4);
+  });
+  bot2.onText(/^\/disallow(@\w+)?$/i, async (msg) => {
+    if (!msg.from || msg.chat.type === "private") return;
+    const admins = await getGroupAdmins(bot2, msg.chat.id);
+    if (!admins.has(msg.from.id)) {
+      await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
+      return;
+    }
+    await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
+    const t = msg.reply_to_message?.from;
+    if (!t) {
+      const r = await bot2.sendMessage(msg.chat.id, `\u274C \u0995\u09BE\u09B0\u09CB \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 reply \u0995\u09B0\u09C7 /disallow \u09A6\u09BF\u09A8\u0964`, { parse_mode: "HTML" });
+      setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
+      return;
+    }
+    removeFromWhitelist(t.id);
+    const reply = await bot2.sendMessage(
+      msg.chat.id,
+      `\u{1F512} <a href="tg://user?id=${t.id}">${getDisplayName(t)}</a>-\u0995\u09C7 whitelist \u09A5\u09C7\u0995\u09C7 \u09B8\u09B0\u09BE\u09A8\u09CB \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964`,
+      { parse_mode: "HTML" }
+    );
+    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 1e4);
   });
   bot2.on("my_chat_member", (msg) => {
     invalidateAdminCache(msg.chat.id);
