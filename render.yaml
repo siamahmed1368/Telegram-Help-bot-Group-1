@@ -4,7 +4,6 @@ services:
     runtime: node
     region: singapore
     plan: free
-    rootDir: deploy
     buildCommand: echo "pre-built"
     startCommand: node --enable-source-maps index.mjs
     envVars:
