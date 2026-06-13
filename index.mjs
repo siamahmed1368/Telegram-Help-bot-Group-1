@@ -84781,23 +84781,13 @@ function registerHandlers(bot2) {
       });
       const isAdmin = admins.has(newMember.id) || CONFIG.OWNER_IDS.includes(newMember.id);
       try {
-        if (isAdmin) {
-          await bot2.sendMessage(
-            chatId,
-            `\u{1F451} <b>\u09B8\u09CD\u09AC\u09BE\u0997\u09A4\u09AE, \u0985\u09CD\u09AF\u09BE\u09A1\u09AE\u09BF\u09A8!</b> <a href="tg://user?id=${newMember.id}">${name}</a>
-\u{1F4AC} \u09AA\u09C7\u0987\u09A1 \u0997\u09CD\u09B0\u09C1\u09AA \u0995\u09BF\u09A8\u09A4\u09C7 \u0987\u09A8\u09AC\u0995\u09CD\u09B8 \u0995\u09B0\u09C1\u09A8: ${CONFIG.PROMO_USERNAME}`,
-            { parse_mode: "HTML" }
-          );
-        } else {
-          await bot2.sendMessage(
-            chatId,
-            `\u{1F389} <b>${CONFIG.GROUP_NAME}</b>-\u098F \u09B8\u09CD\u09AC\u09BE\u0997\u09A4\u09AE, <a href="tg://user?id=${newMember.id}">${name}</a>!
+        await bot2.sendMessage(
+          chatId,
+          `\u{1F389} <b>${CONFIG.GROUP_NAME}</b>-\u098F \u09B8\u09CD\u09AC\u09BE\u0997\u09A4\u09AE, <a href="tg://user?id=${newMember.id}">${name}</a>!
 
-\u{1F4B8} \u09AA\u09C7\u0987\u09A1 \u0997\u09CD\u09B0\u09C1\u09AA \u0995\u09BF\u09A8\u09A4\u09C7 \u0987\u09A8\u09AC\u0995\u09CD\u09B8 \u0995\u09B0\u09C1\u09A8: ${CONFIG.PROMO_USERNAME}
-\u26A0\uFE0F \u0997\u09CD\u09B0\u09C1\u09AA\u09C7 \u099F\u09C7\u0995\u09CD\u09B8\u099F \u0995\u09B0\u09A4\u09C7 \u0986\u09B0\u0993 <b>\u09E9 \u099C\u09A8\u0995\u09C7</b> \u0985\u09CD\u09AF\u09BE\u09A1 \u0995\u09B0\u09C1\u09A8!`,
-            { parse_mode: "HTML" }
-          );
-        }
+\u{1F4B8} \u09AA\u09C7\u0987\u09A1 \u0997\u09CD\u09B0\u09C1\u09AA \u0995\u09BF\u09A8\u09A4\u09C7 \u0987\u09A8\u09AC\u0995\u09CD\u09B8 \u0995\u09B0\u09C1\u09A8: ${CONFIG.PROMO_USERNAME}`,
+          { parse_mode: "HTML" }
+        );
       } catch (err) {
         logger.warn({ err }, "Could not send welcome message");
       }
@@ -84844,19 +84834,6 @@ function registerHandlers(bot2) {
       username: msg.from.username,
       firstName: msg.from.first_name
     });
-    if (user.invites < CONFIG.REQUIRED_INVITES) {
-      await deleteMessageSafe(bot2, chatId, messageId);
-      const remaining = CONFIG.REQUIRED_INVITES - user.invites;
-      const name = getDisplayName(msg.from);
-      await sendAutoDelete(
-        bot2,
-        chatId,
-        `\u26A0\uFE0F <a href="tg://user?id=${userId}">${name}</a>, \u099F\u09C7\u0995\u09CD\u09B8\u099F \u09AA\u09BE\u09A0\u09BE\u09A8\u09CB\u09B0 \u099C\u09A8\u09CD\u09AF \u0986\u09AA\u09A8\u09BE\u0995\u09C7 \u09AA\u09CD\u09B0\u09A5\u09AE\u09C7 \u0986\u09B0\u0993 <b>${remaining} \u099C\u09A8\u0995\u09C7</b> \u0997\u09CD\u09B0\u09C1\u09AA\u09C7 \u0985\u09CD\u09AF\u09BE\u09A1 \u0995\u09B0\u09A4\u09C7 \u09B9\u09AC\u09C7!
-\u{1F4AC} \u09AA\u09C7\u0987\u09A1 \u0997\u09CD\u09B0\u09C1\u09AA \u0995\u09BF\u09A8\u09B2\u09C7 \u09AE\u09C7\u09B8\u09C7\u099C \u09A6\u09BF\u09A8: ${CONFIG.PROMO_USERNAME}`,
-        CONFIG.WARNING_AUTO_DELETE_MS
-      );
-      return;
-    }
     if (isFlooding(chatId, userId)) {
       await deleteMessageSafe(bot2, chatId, messageId);
       const name = getDisplayName(msg.from);
