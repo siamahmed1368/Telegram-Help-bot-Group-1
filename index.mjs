@@ -84921,34 +84921,96 @@ function registerHandlers(bot2) {
 }
 
 // src/bot/commands.ts
-function getTarget(msg, match) {
+function getTarget(msg, match, groupIndex = 2) {
   if (msg.reply_to_message?.from) {
     const u = msg.reply_to_message.from;
     return { id: u.id, name: getDisplayName(u) };
   }
-  const idStr = match?.[1];
-  if (idStr) return { id: parseInt(idStr, 10), name: `#${idStr}` };
+  if (msg.entities) {
+    for (const e of msg.entities) {
+      if (e.type === "text_mention" && e.user) {
+        return { id: e.user.id, name: getDisplayName(e.user) };
+      }
+    }
+  }
+  const idStr = match?.[groupIndex];
+  if (idStr && /^\d+$/.test(idStr)) {
+    return { id: parseInt(idStr, 10), name: `#${idStr}` };
+  }
   return null;
 }
 function registerCommands(bot2) {
+  bot2.onText(/^\/info(@\w+)?(?:\s+(\S+))?$/i, async (msg, match) => {
+    if (!msg.from || msg.chat.type === "private") return;
+    const admins = await getGroupAdmins(bot2, msg.chat.id);
+    if (!admins.has(msg.from.id)) {
+      await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
+      return;
+    }
+    await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
+    let targetId = null;
+    let targetName = "\u0985\u099C\u09BE\u09A8\u09BE";
+    if (msg.reply_to_message?.from) {
+      targetId = msg.reply_to_message.from.id;
+      targetName = getDisplayName(msg.reply_to_message.from);
+    } else if (msg.entities) {
+      for (const e of msg.entities) {
+        if (e.type === "text_mention" && e.user) {
+          targetId = e.user.id;
+          targetName = getDisplayName(e.user);
+          break;
+        }
+      }
+    }
+    if (!targetId && match?.[2] && /^\d+$/.test(match[2])) {
+      targetId = parseInt(match[2], 10);
+      targetName = `#${targetId}`;
+    }
+    if (!targetId) {
+      const r = await bot2.sendMessage(
+        msg.chat.id,
+        `\u274C <b>\u09AC\u09CD\u09AF\u09AC\u09B9\u09BE\u09B0:</b> \u0995\u09BE\u09B0\u09CB \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 reply \u0995\u09B0\u09C1\u09A8 \u0985\u09A5\u09AC\u09BE <code>/info [user_id]</code> \u09B2\u09BF\u0996\u09C1\u09A8\u0964`,
+        { parse_mode: "HTML" }
+      );
+      setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
+      return;
+    }
+    const u = getUser(targetId);
+    const remaining = Math.max(0, CONFIG.REQUIRED_INVITES - u.invites);
+    const mutedText = u.mutedUntil && u.mutedUntil > Date.now() ? `\u{1F507} <b>\u09AE\u09BF\u0989\u099F:</b> ${formatDate(new Date(u.mutedUntil))} ${formatTime(new Date(u.mutedUntil))} \u09AA\u09B0\u09CD\u09AF\u09A8\u09CD\u09A4` : `\u{1F50A} <b>\u09AE\u09BF\u0989\u099F:</b> \u09A8\u09C7\u0987`;
+    const wlText = isWhitelisted(targetId) ? `\u2705 \u09B9\u09CD\u09AF\u09BE\u0981` : `\u274C \u09A8\u09BE`;
+    const reply = await bot2.sendMessage(
+      msg.chat.id,
+      `\u{1F464} <b>\u0987\u0989\u099C\u09BE\u09B0 \u09A4\u09A5\u09CD\u09AF \u2014 ${targetName}</b>
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+\u{1F194} <b>User ID:</b> <code>${targetId}</code>
+\u{1F4E8} <b>\u09AE\u09CB\u099F \u0987\u09A8\u09AD\u09BE\u0987\u099F:</b> <b>${u.invites}</b> \u099C\u09A8
+\u26A0\uFE0F <b>\u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE:</b> <b>${u.warnings}/${CONFIG.MAX_WARNINGS}</b>
+\u{1F6AB} <b>\u09AC\u09CD\u09AF\u09BE\u09A8:</b> ${u.banned ? `\u2705 \u09B9\u09CD\u09AF\u09BE\u0981` : `\u274C \u09A8\u09BE`}
+${mutedText}
+\u{1F6E1}\uFE0F <b>Whitelist:</b> ${wlText}
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501`,
+      { parse_mode: "HTML" }
+    );
+    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 25e3);
+  });
   bot2.onText(/^\/myinvites(@\w+)?$/i, async (msg) => {
     if (!msg.from || msg.chat.type === "private") return;
     const user = getUser(msg.from.id);
     const name = getDisplayName(msg.from);
     const remaining = Math.max(0, CONFIG.REQUIRED_INVITES - user.invites);
-    const text = `\u{1F4CA} <b>${name}-\u098F\u09B0 \u0987\u09A8\u09AD\u09BE\u0987\u099F \u09A4\u09A5\u09CD\u09AF</b>
-
-\u2705 \u09AE\u09CB\u099F \u0987\u09A8\u09AD\u09BE\u0987\u099F: <b>${user.invites}</b>
-\u26A0\uFE0F \u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE: <b>${user.warnings}/${CONFIG.MAX_WARNINGS}</b>
-` + (remaining > 0 ? `\u{1F512} \u099A\u09CD\u09AF\u09BE\u099F \u0986\u09A8\u09B2\u0995 \u0995\u09B0\u09A4\u09C7 \u0986\u09B0\u0993 <b>${remaining} \u099C\u09A8\u0995\u09C7</b> \u0985\u09CD\u09AF\u09BE\u09A1 \u0995\u09B0\u09C1\u09A8\u0964` : `\u{1F7E2} \u099A\u09CD\u09AF\u09BE\u099F \u0985\u09CD\u09AF\u09BE\u0995\u09CD\u09B8\u09C7\u09B8: <b>\u0986\u09A8\u09B2\u0995 \u09B9\u09AF\u09BC\u09C7\u099B\u09C7</b>`);
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
-    const reply = await bot2.sendMessage(msg.chat.id, text, {
-      parse_mode: "HTML"
-    });
-    setTimeout(
-      () => deleteMessageSafe(bot2, msg.chat.id, reply.message_id),
-      15e3
+    const reply = await bot2.sendMessage(
+      msg.chat.id,
+      `\u{1F4CA} <b>\u0986\u09AE\u09BE\u09B0 \u0987\u09A8\u09AD\u09BE\u0987\u099F \u09A4\u09A5\u09CD\u09AF</b>
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+\u{1F464} <b>\u09A8\u09BE\u09AE:</b> ${name}
+\u{1F4E8} <b>\u09AE\u09CB\u099F \u0987\u09A8\u09AD\u09BE\u0987\u099F:</b> <b>${user.invites}</b> \u099C\u09A8
+\u26A0\uFE0F <b>\u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE:</b> <b>${user.warnings}/${CONFIG.MAX_WARNINGS}</b>
+` + (remaining > 0 ? `\u{1F512} <b>\u0985\u09AC\u09B8\u09CD\u09A5\u09BE:</b> \u0986\u09B0\u0993 <b>${remaining} \u099C\u09A8</b> \u0985\u09CD\u09AF\u09BE\u09A1 \u0995\u09B0\u09C1\u09A8` : `\u{1F7E2} <b>\u0985\u09AC\u09B8\u09CD\u09A5\u09BE:</b> \u09B8\u09AE\u09CD\u09AA\u09C2\u09B0\u09CD\u09A3 \u0986\u09A8\u09B2\u0995 \u2705`),
+      { parse_mode: "HTML" }
     );
+    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 15e3);
   });
   bot2.onText(/^\/invites(@\w+)?(?:\s+(\d+))?$/i, async (msg, match) => {
     if (!msg.from || msg.chat.type === "private") return;
@@ -84960,21 +85022,20 @@ function registerCommands(bot2) {
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
     const t = getTarget(msg, match);
     const targetId = t?.id ?? msg.from.id;
+    const targetName = t?.name ?? getDisplayName(msg.from);
     const user = getUser(targetId);
-    const text = `\u{1F4CB} <b>\u0987\u0989\u099C\u09BE\u09B0 \u09A4\u09A5\u09CD\u09AF</b>
-
-\u{1F194} ID: <code>${targetId}</code>
-\u2705 \u09AE\u09CB\u099F \u0987\u09A8\u09AD\u09BE\u0987\u099F: <b>${user.invites}</b>
-\u26A0\uFE0F \u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE: <b>${user.warnings}/${CONFIG.MAX_WARNINGS}</b>
-\u{1F6AB} \u09AC\u09CD\u09AF\u09BE\u09A8: <b>${user.banned ? "\u09B9\u09CD\u09AF\u09BE\u0981" : "\u09A8\u09BE"}</b>
-` + (user.mutedUntil && user.mutedUntil > Date.now() ? `\u{1F507} \u09AE\u09BF\u0989\u099F \u09B6\u09C7\u09B7: <b>${formatDate(new Date(user.mutedUntil))} ${formatTime(new Date(user.mutedUntil))}</b>` : `\u{1F50A} \u09AE\u09BF\u0989\u099F \u0985\u09AC\u09B8\u09CD\u09A5\u09BE: <b>\u09B8\u0995\u09CD\u09B0\u09BF\u09AF\u09BC \u09A8\u09AF\u09BC</b>`);
-    const reply = await bot2.sendMessage(msg.chat.id, text, {
-      parse_mode: "HTML"
-    });
-    setTimeout(
-      () => deleteMessageSafe(bot2, msg.chat.id, reply.message_id),
-      2e4
+    const reply = await bot2.sendMessage(
+      msg.chat.id,
+      `\u{1F4CB} <b>\u0987\u09A8\u09AD\u09BE\u0987\u099F \u09A4\u09A5\u09CD\u09AF \u2014 ${targetName}</b>
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+\u{1F194} <b>User ID:</b> <code>${targetId}</code>
+\u{1F4E8} <b>\u09AE\u09CB\u099F \u0987\u09A8\u09AD\u09BE\u0987\u099F:</b> <b>${user.invites}</b> \u099C\u09A8
+\u26A0\uFE0F <b>\u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE:</b> <b>${user.warnings}/${CONFIG.MAX_WARNINGS}</b>
+\u{1F6AB} <b>\u09AC\u09CD\u09AF\u09BE\u09A8:</b> ${user.banned ? `\u2705 \u09B9\u09CD\u09AF\u09BE\u0981` : `\u274C \u09A8\u09BE`}
+` + (user.mutedUntil && user.mutedUntil > Date.now() ? `\u{1F507} <b>\u09AE\u09BF\u0989\u099F:</b> ${formatDate(new Date(user.mutedUntil))} ${formatTime(new Date(user.mutedUntil))} \u09AA\u09B0\u09CD\u09AF\u09A8\u09CD\u09A4` : `\u{1F50A} <b>\u09AE\u09BF\u0989\u099F:</b> \u09A8\u09C7\u0987`),
+      { parse_mode: "HTML" }
     );
+    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 2e4);
   });
   bot2.onText(/^\/addcredit(@\w+)?(?:\s+(\d+))?(?:\s+(\d+))?$/i, async (msg, match) => {
     if (!msg.from || msg.chat.type === "private") return;
@@ -84986,22 +85047,22 @@ function registerCommands(bot2) {
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
     const t = getTarget(msg, match);
     if (!t) {
-      const r = await bot2.sendMessage(msg.chat.id, `\u274C \u0995\u09BE\u09B0\u09CB \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 reply \u0995\u09B0\u09C7 /addcredit \u09A6\u09BF\u09A8 \u0985\u09A5\u09AC\u09BE /addcredit [id] [\u09AA\u09B0\u09BF\u09AE\u09BE\u09A3] \u09B2\u09BF\u0996\u09C1\u09A8\u0964`, { parse_mode: "HTML" });
+      const r = await bot2.sendMessage(msg.chat.id, `\u274C <b>\u09AC\u09CD\u09AF\u09AC\u09B9\u09BE\u09B0:</b> reply \u0995\u09B0\u09C1\u09A8 \u0985\u09A5\u09AC\u09BE <code>/addcredit [user_id] [\u09AA\u09B0\u09BF\u09AE\u09BE\u09A3]</code>`, { parse_mode: "HTML" });
       setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
       return;
     }
-    const amount = match?.[3] ? parseInt(match[3], 10) : match?.[2] && !msg.reply_to_message ? 1 : 1;
+    const amount = match?.[3] ? parseInt(match[3], 10) : 1;
     const updated = addInvites(t.id, amount);
     const reply = await bot2.sendMessage(
       msg.chat.id,
-      `\u2705 <b>${t.name}</b>-\u0995\u09C7 <b>${amount}\u099F\u09BF</b> \u0987\u09A8\u09AD\u09BE\u0987\u099F \u0995\u09CD\u09B0\u09C7\u09A1\u09BF\u099F \u09A6\u09C7\u0993\u09AF\u09BC\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964
-\u09AE\u09CB\u099F \u0987\u09A8\u09AD\u09BE\u0987\u099F: <b>${updated.invites}</b>`,
+      `\u{1F4B3} <b>\u0987\u09A8\u09AD\u09BE\u0987\u099F \u0995\u09CD\u09B0\u09C7\u09A1\u09BF\u099F \u09AF\u09CB\u0997 \u09B9\u09AF\u09BC\u09C7\u099B\u09C7</b>
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+\u{1F464} <b>\u0987\u0989\u099C\u09BE\u09B0:</b> ${t.name}
+\u2795 <b>\u09AF\u09CB\u0997 \u0995\u09B0\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7:</b> <b>${amount}</b> \u099F\u09BF
+\u{1F4E8} <b>\u09AE\u09CB\u099F \u0987\u09A8\u09AD\u09BE\u0987\u099F:</b> <b>${updated.invites}</b> \u099C\u09A8`,
       { parse_mode: "HTML" }
     );
-    setTimeout(
-      () => deleteMessageSafe(bot2, msg.chat.id, reply.message_id),
-      1e4
-    );
+    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 1e4);
   });
   bot2.onText(/^\/warn(@\w+)?(?:\s+(\d+))?(?:\s+(.+))?$/i, async (msg, match) => {
     if (!msg.from || msg.chat.type === "private") return;
@@ -85013,7 +85074,7 @@ function registerCommands(bot2) {
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
     const t = getTarget(msg, match);
     if (!t) {
-      const r = await bot2.sendMessage(msg.chat.id, `\u274C \u0995\u09BE\u09B0\u09CB \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 reply \u0995\u09B0\u09C7 /warn \u09A6\u09BF\u09A8\u0964`, { parse_mode: "HTML" });
+      const r = await bot2.sendMessage(msg.chat.id, `\u274C <b>\u09AC\u09CD\u09AF\u09AC\u09B9\u09BE\u09B0:</b> reply \u0995\u09B0\u09C1\u09A8 \u0985\u09A5\u09AC\u09BE <code>/warn [user_id] [\u0995\u09BE\u09B0\u09A3]</code>`, { parse_mode: "HTML" });
       setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
       return;
     }
@@ -85034,19 +85095,24 @@ function registerCommands(bot2) {
       }
       const reply = await bot2.sendMessage(
         msg.chat.id,
-        `\u{1F6AB} <b>${t.name}</b> \u09B8\u09B0\u09CD\u09AC\u09CB\u099A\u09CD\u099A \u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE\u09AF\u09BC \u09AA\u09CC\u0981\u099B\u09C7\u099B\u09C7\u09A8!
-\u0985\u09CD\u09AF\u09BE\u0995\u09B6\u09A8: \u09AE\u09BF\u0989\u099F \u{1F507} \u0995\u09B0\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7 ${formatDate(unmuteDate)} \u09A4\u09BE\u09B0\u09BF\u0996 ${formatTime(unmuteDate)} \u09AA\u09B0\u09CD\u09AF\u09A8\u09CD\u09A4\u0964
-
-\u{1F4AC} \u09AA\u09C7\u0987\u09A1 \u0997\u09CD\u09B0\u09C1\u09AA \u0995\u09BF\u09A8\u09B2\u09C7 \u09AE\u09C7\u09B8\u09C7\u099C \u09A6\u09BF\u09A8: ${CONFIG.PROMO_USERNAME}`,
+        `\u{1F507} <b>\u09B8\u09B0\u09CD\u09AC\u09CB\u099A\u09CD\u099A \u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE \u2014 \u0985\u099F\u09CB \u09AE\u09BF\u0989\u099F!</b>
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+\u{1F464} <b>\u0987\u0989\u099C\u09BE\u09B0:</b> ${t.name}
+\u{1F4CC} <b>\u0995\u09BE\u09B0\u09A3:</b> ${reason}
+\u23F0 <b>\u09AE\u09BF\u0989\u099F \u09B6\u09C7\u09B7:</b> ${formatDate(unmuteDate)} ${formatTime(unmuteDate)}
+\u{1F4AC} \u09AA\u09C7\u0987\u09A1 \u0997\u09CD\u09B0\u09C1\u09AA: ${CONFIG.PROMO_USERNAME}`,
         { parse_mode: "HTML" }
       );
       setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 15e3);
     } else {
       const reply = await bot2.sendMessage(
         msg.chat.id,
-        `\u26A0\uFE0F <b>${t.name}</b>-\u0995\u09C7 \u09B8\u09A4\u09B0\u09CD\u0995 \u0995\u09B0\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7
-\u0995\u09BE\u09B0\u09A3: ${reason}
-\u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE: <b>${newWarnings}/${CONFIG.MAX_WARNINGS}</b>`,
+        `\u26A0\uFE0F <b>\u09B8\u09A4\u09B0\u09CD\u0995\u09AC\u09BE\u09B0\u09CD\u09A4\u09BE \u099C\u09BE\u09B0\u09BF \u0995\u09B0\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7</b>
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+\u{1F464} <b>\u0987\u0989\u099C\u09BE\u09B0:</b> ${t.name}
+\u{1F4CC} <b>\u0995\u09BE\u09B0\u09A3:</b> ${reason}
+\u{1F4CA} <b>\u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE:</b> <b>${newWarnings}/${CONFIG.MAX_WARNINGS}</b>
+\u26A1 ${CONFIG.MAX_WARNINGS - newWarnings} \u099F\u09BF \u09AC\u09BE\u0995\u09BF \u09A5\u09BE\u0995\u09B2\u09C7 \u0985\u099F\u09CB \u09AE\u09BF\u0989\u099F \u09B9\u09AC\u09C7`,
         { parse_mode: "HTML" }
       );
       setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 12e3);
@@ -85062,7 +85128,7 @@ function registerCommands(bot2) {
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
     const t = getTarget(msg, match);
     if (!t) {
-      const r = await bot2.sendMessage(msg.chat.id, `\u274C \u0995\u09BE\u09B0\u09CB \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 reply \u0995\u09B0\u09C7 /resetwarn \u09A6\u09BF\u09A8\u0964`, { parse_mode: "HTML" });
+      const r = await bot2.sendMessage(msg.chat.id, `\u274C <b>\u09AC\u09CD\u09AF\u09AC\u09B9\u09BE\u09B0:</b> reply \u0995\u09B0\u09C1\u09A8 \u0985\u09A5\u09AC\u09BE <code>/resetwarn [user_id]</code>`, { parse_mode: "HTML" });
       setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
       return;
     }
@@ -85070,7 +85136,10 @@ function registerCommands(bot2) {
     resetFlood(msg.chat.id, t.id);
     const reply = await bot2.sendMessage(
       msg.chat.id,
-      `\u2705 <b>${t.name}</b>-\u098F\u09B0 \u09B8\u09AC \u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE \u09AE\u09C1\u099B\u09C7 \u09A6\u09C7\u0993\u09AF\u09BC\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964`,
+      `\u2705 <b>\u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE \u09B0\u09BF\u09B8\u09C7\u099F \u09B8\u09AE\u09CD\u09AA\u09A8\u09CD\u09A8</b>
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+\u{1F464} <b>\u0987\u0989\u099C\u09BE\u09B0:</b> ${t.name}
+\u{1F4CA} <b>\u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE:</b> <b>0/${CONFIG.MAX_WARNINGS}</b> (\u09B8\u09AC \u09AE\u09C1\u099B\u09C7 \u09A6\u09C7\u0993\u09AF\u09BC\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7)`,
       { parse_mode: "HTML" }
     );
     setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 8e3);
@@ -85085,7 +85154,7 @@ function registerCommands(bot2) {
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
     const t = getTarget(msg, match);
     if (!t) {
-      const r = await bot2.sendMessage(msg.chat.id, `\u274C \u0995\u09BE\u09B0\u09CB \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 reply \u0995\u09B0\u09C7 /mute \u09A6\u09BF\u09A8\u0964`, { parse_mode: "HTML" });
+      const r = await bot2.sendMessage(msg.chat.id, `\u274C <b>\u09AC\u09CD\u09AF\u09AC\u09B9\u09BE\u09B0:</b> reply \u0995\u09B0\u09C1\u09A8 \u0985\u09A5\u09AC\u09BE <code>/mute [user_id] [\u0998\u09A3\u09CD\u099F\u09BE]</code>`, { parse_mode: "HTML" });
       setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
       return;
     }
@@ -85102,7 +85171,11 @@ function registerCommands(bot2) {
     }
     const reply = await bot2.sendMessage(
       msg.chat.id,
-      `\u{1F507} <b>${t.name}</b>-\u0995\u09C7 \u09AE\u09BF\u0989\u099F \u0995\u09B0\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7 ${formatDate(unmuteDate)} \u09A4\u09BE\u09B0\u09BF\u0996 ${formatTime(unmuteDate)} \u09AA\u09B0\u09CD\u09AF\u09A8\u09CD\u09A4\u0964`,
+      `\u{1F507} <b>\u09AE\u09BF\u0989\u099F \u09B8\u09AE\u09CD\u09AA\u09A8\u09CD\u09A8</b>
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+\u{1F464} <b>\u0987\u0989\u099C\u09BE\u09B0:</b> ${t.name}
+\u23F1\uFE0F <b>\u09B8\u09AE\u09AF\u09BC\u0995\u09BE\u09B2:</b> ${hours} \u0998\u09A3\u09CD\u099F\u09BE
+\u23F0 <b>\u09AE\u09BF\u0989\u099F \u09B6\u09C7\u09B7:</b> ${formatDate(unmuteDate)} ${formatTime(unmuteDate)}`,
       { parse_mode: "HTML" }
     );
     setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 12e3);
@@ -85117,7 +85190,7 @@ function registerCommands(bot2) {
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
     const t = getTarget(msg, match);
     if (!t) {
-      const r = await bot2.sendMessage(msg.chat.id, `\u274C \u0995\u09BE\u09B0\u09CB \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 reply \u0995\u09B0\u09C7 /unmute \u09A6\u09BF\u09A8\u0964`, { parse_mode: "HTML" });
+      const r = await bot2.sendMessage(msg.chat.id, `\u274C <b>\u09AC\u09CD\u09AF\u09AC\u09B9\u09BE\u09B0:</b> reply \u0995\u09B0\u09C1\u09A8 \u0985\u09A5\u09AC\u09BE <code>/unmute [user_id]</code>`, { parse_mode: "HTML" });
       setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
       return;
     }
@@ -85142,7 +85215,10 @@ function registerCommands(bot2) {
     }
     const reply = await bot2.sendMessage(
       msg.chat.id,
-      `\u{1F50A} <b>${t.name}</b>-\u098F\u09B0 \u09AE\u09BF\u0989\u099F \u09A4\u09C1\u09B2\u09C7 \u09A8\u09C7\u0993\u09AF\u09BC\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964`,
+      `\u{1F50A} <b>\u09AE\u09BF\u0989\u099F \u09A4\u09C1\u09B2\u09C7 \u09A8\u09C7\u0993\u09AF\u09BC\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7</b>
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+\u{1F464} <b>\u0987\u0989\u099C\u09BE\u09B0:</b> ${t.name}
+\u2705 \u098F\u0996\u09A8 \u09A5\u09C7\u0995\u09C7 \u09AE\u09C7\u09B8\u09C7\u099C \u09AA\u09BE\u09A0\u09BE\u09A4\u09C7 \u09AA\u09BE\u09B0\u09AC\u09C7\u09A8`,
       { parse_mode: "HTML" }
     );
     setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 8e3);
@@ -85157,7 +85233,7 @@ function registerCommands(bot2) {
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
     const t = getTarget(msg, match);
     if (!t) {
-      const r = await bot2.sendMessage(msg.chat.id, `\u274C \u0995\u09BE\u09B0\u09CB \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 reply \u0995\u09B0\u09C7 /ban \u09A6\u09BF\u09A8\u0964`, { parse_mode: "HTML" });
+      const r = await bot2.sendMessage(msg.chat.id, `\u274C <b>\u09AC\u09CD\u09AF\u09AC\u09B9\u09BE\u09B0:</b> reply \u0995\u09B0\u09C1\u09A8 \u0985\u09A5\u09AC\u09BE <code>/ban [user_id] [\u0995\u09BE\u09B0\u09A3]</code>`, { parse_mode: "HTML" });
       setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
       return;
     }
@@ -85170,10 +85246,11 @@ function registerCommands(bot2) {
     }
     const reply = await bot2.sendMessage(
       msg.chat.id,
-      `\u{1F6AB} <b>${t.name}</b>-\u0995\u09C7 \u09B8\u09CD\u09A5\u09BE\u09AF\u09BC\u09C0\u09AD\u09BE\u09AC\u09C7 \u09AC\u09CD\u09AF\u09BE\u09A8 \u0995\u09B0\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964
-\u0995\u09BE\u09B0\u09A3: ${reason}
-
-\u{1F4AC} \u09AA\u09C7\u0987\u09A1 \u0997\u09CD\u09B0\u09C1\u09AA \u0995\u09BF\u09A8\u09B2\u09C7 \u09AE\u09C7\u09B8\u09C7\u099C \u09A6\u09BF\u09A8: ${CONFIG.PROMO_USERNAME}`,
+      `\u{1F6AB} <b>\u09B8\u09CD\u09A5\u09BE\u09AF\u09BC\u09C0 \u09AC\u09CD\u09AF\u09BE\u09A8 \u0995\u09BE\u09B0\u09CD\u09AF\u0995\u09B0 \u09B9\u09AF\u09BC\u09C7\u099B\u09C7</b>
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+\u{1F464} <b>\u0987\u0989\u099C\u09BE\u09B0:</b> ${t.name}
+\u{1F4CC} <b>\u0995\u09BE\u09B0\u09A3:</b> ${reason}
+\u{1F4AC} \u09AA\u09C7\u0987\u09A1 \u0997\u09CD\u09B0\u09C1\u09AA: ${CONFIG.PROMO_USERNAME}`,
       { parse_mode: "HTML" }
     );
     setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 15e3);
@@ -85188,7 +85265,7 @@ function registerCommands(bot2) {
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
     const t = getTarget(msg, match);
     if (!t) {
-      const r = await bot2.sendMessage(msg.chat.id, `\u274C /unban [user_id] \u09B2\u09BF\u0996\u09C1\u09A8\u0964 \u09AC\u09CD\u09AF\u09BE\u09A8 \u09B9\u0993\u09AF\u09BC\u09BE \u09AC\u09CD\u09AF\u0995\u09CD\u09A4\u09BF\u09B0 ID \u09B2\u09BE\u0997\u09AC\u09C7\u0964`, { parse_mode: "HTML" });
+      const r = await bot2.sendMessage(msg.chat.id, `\u274C <b>\u09AC\u09CD\u09AF\u09AC\u09B9\u09BE\u09B0:</b> <code>/unban [user_id]</code>`, { parse_mode: "HTML" });
       setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
       return;
     }
@@ -85200,7 +85277,10 @@ function registerCommands(bot2) {
     }
     const reply = await bot2.sendMessage(
       msg.chat.id,
-      `\u2705 <b>${t.name}</b>-\u098F\u09B0 \u09AC\u09CD\u09AF\u09BE\u09A8 \u09A4\u09C1\u09B2\u09C7 \u09A8\u09C7\u0993\u09AF\u09BC\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964`,
+      `\u2705 <b>\u09AC\u09CD\u09AF\u09BE\u09A8 \u09AA\u09CD\u09B0\u09A4\u09CD\u09AF\u09BE\u09B9\u09BE\u09B0 \u0995\u09B0\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7</b>
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+\u{1F464} <b>\u0987\u0989\u099C\u09BE\u09B0:</b> ${t.name}
+\u{1F7E2} \u098F\u0996\u09A8 \u09A5\u09C7\u0995\u09C7 \u0997\u09CD\u09B0\u09C1\u09AA\u09C7 \u09AF\u09CB\u0997 \u09A6\u09BF\u09A4\u09C7 \u09AA\u09BE\u09B0\u09AC\u09C7\u09A8`,
       { parse_mode: "HTML" }
     );
     setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 8e3);
@@ -85215,7 +85295,7 @@ function registerCommands(bot2) {
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
     const t = getTarget(msg, match);
     if (!t) {
-      const r = await bot2.sendMessage(msg.chat.id, `\u274C \u0995\u09BE\u09B0\u09CB \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 reply \u0995\u09B0\u09C7 /kick \u09A6\u09BF\u09A8\u0964`, { parse_mode: "HTML" });
+      const r = await bot2.sendMessage(msg.chat.id, `\u274C <b>\u09AC\u09CD\u09AF\u09AC\u09B9\u09BE\u09B0:</b> reply \u0995\u09B0\u09C1\u09A8 \u0985\u09A5\u09AC\u09BE <code>/kick [user_id] [\u0995\u09BE\u09B0\u09A3]</code>`, { parse_mode: "HTML" });
       setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
       return;
     }
@@ -85225,18 +85305,70 @@ function registerCommands(bot2) {
       await bot2.unbanChatMember(msg.chat.id, t.id, { only_if_banned: true });
     } catch (err) {
       logger.warn({ err }, "Could not kick user");
-      const r = await bot2.sendMessage(msg.chat.id, `\u274C <b>${t.name}</b>-\u0995\u09C7 \u0995\u09BF\u0995 \u0995\u09B0\u09BE \u09B8\u09AE\u09CD\u09AD\u09AC \u09B9\u09AF\u09BC\u09A8\u09BF\u0964 \u09AC\u099F\u09C7\u09B0 Admin \u09AA\u09BE\u09B0\u09AE\u09BF\u09B6\u09A8 \u099A\u09C7\u0995 \u0995\u09B0\u09C1\u09A8\u0964`, { parse_mode: "HTML" });
+      const r = await bot2.sendMessage(msg.chat.id, `\u274C <b>\u0995\u09BF\u0995 \u09AC\u09CD\u09AF\u09B0\u09CD\u09A5 \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964</b> \u09AC\u099F\u09C7\u09B0 Admin \u09AA\u09BE\u09B0\u09AE\u09BF\u09B6\u09A8 \u099A\u09C7\u0995 \u0995\u09B0\u09C1\u09A8\u0964`, { parse_mode: "HTML" });
       setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
       return;
     }
     const reply = await bot2.sendMessage(
       msg.chat.id,
-      `\u{1F462} <b>${t.name}</b>-\u0995\u09C7 \u0997\u09CD\u09B0\u09C1\u09AA \u09A5\u09C7\u0995\u09C7 \u09AC\u09C7\u09B0 \u0995\u09B0\u09C7 \u09A6\u09C7\u0993\u09AF\u09BC\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964
-\u0995\u09BE\u09B0\u09A3: ${reason}
-<i>\u09A4\u09BE\u09B0\u09BE \u0987\u09A8\u09AD\u09BE\u0987\u099F \u09B2\u09BF\u0982\u0995 \u09A6\u09BF\u09AF\u09BC\u09C7 \u09AA\u09C1\u09A8\u09B0\u09BE\u09AF\u09BC \u09AF\u09CB\u0997 \u09A6\u09BF\u09A4\u09C7 \u09AA\u09BE\u09B0\u09AC\u09C7\u09A8\u0964</i>`,
+      `\u{1F462} <b>\u0997\u09CD\u09B0\u09C1\u09AA \u09A5\u09C7\u0995\u09C7 \u0995\u09BF\u0995 \u0995\u09B0\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7</b>
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+\u{1F464} <b>\u0987\u0989\u099C\u09BE\u09B0:</b> ${t.name}
+\u{1F4CC} <b>\u0995\u09BE\u09B0\u09A3:</b> ${reason}
+\u2139\uFE0F \u0987\u09A8\u09AD\u09BE\u0987\u099F \u09B2\u09BF\u0982\u0995 \u09A6\u09BF\u09AF\u09BC\u09C7 \u09AA\u09C1\u09A8\u09B0\u09BE\u09AF\u09BC \u09AF\u09CB\u0997 \u09A6\u09BF\u09A4\u09C7 \u09AA\u09BE\u09B0\u09AC\u09C7\u09A8`,
       { parse_mode: "HTML" }
     );
     setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 15e3);
+  });
+  bot2.onText(/^\/allow(@\w+)?(?:\s+(\d+))?$/i, async (msg, match) => {
+    if (!msg.from || msg.chat.type === "private") return;
+    const admins = await getGroupAdmins(bot2, msg.chat.id);
+    if (!admins.has(msg.from.id)) {
+      await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
+      return;
+    }
+    await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
+    const t = getTarget(msg, match);
+    if (!t) {
+      const r = await bot2.sendMessage(msg.chat.id, `\u274C <b>\u09AC\u09CD\u09AF\u09AC\u09B9\u09BE\u09B0:</b> reply \u0995\u09B0\u09C1\u09A8 \u0985\u09A5\u09AC\u09BE <code>/allow [user_id]</code>`, { parse_mode: "HTML" });
+      setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
+      return;
+    }
+    addToWhitelist(t.id);
+    const reply = await bot2.sendMessage(
+      msg.chat.id,
+      `\u{1F6E1}\uFE0F <b>Whitelist-\u098F \u09AF\u09CB\u0997 \u0995\u09B0\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7</b>
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+\u{1F464} <b>\u0987\u0989\u099C\u09BE\u09B0:</b> ${t.name}
+\u2705 \u09B8\u09CD\u09AA\u09CD\u09AF\u09BE\u09AE/\u09B2\u09BF\u0982\u0995 \u099A\u09C7\u0995 \u09A5\u09C7\u0995\u09C7 \u09B8\u09AE\u09CD\u09AA\u09C2\u09B0\u09CD\u09A3 \u09AE\u09C1\u0995\u09CD\u09A4`,
+      { parse_mode: "HTML" }
+    );
+    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 1e4);
+  });
+  bot2.onText(/^\/disallow(@\w+)?(?:\s+(\d+))?$/i, async (msg, match) => {
+    if (!msg.from || msg.chat.type === "private") return;
+    const admins = await getGroupAdmins(bot2, msg.chat.id);
+    if (!admins.has(msg.from.id)) {
+      await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
+      return;
+    }
+    await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
+    const t = getTarget(msg, match);
+    if (!t) {
+      const r = await bot2.sendMessage(msg.chat.id, `\u274C <b>\u09AC\u09CD\u09AF\u09AC\u09B9\u09BE\u09B0:</b> reply \u0995\u09B0\u09C1\u09A8 \u0985\u09A5\u09AC\u09BE <code>/disallow [user_id]</code>`, { parse_mode: "HTML" });
+      setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
+      return;
+    }
+    removeFromWhitelist(t.id);
+    const reply = await bot2.sendMessage(
+      msg.chat.id,
+      `\u{1F512} <b>Whitelist \u09A5\u09C7\u0995\u09C7 \u09B8\u09B0\u09BE\u09A8\u09CB \u09B9\u09AF\u09BC\u09C7\u099B\u09C7</b>
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+\u{1F464} <b>\u0987\u0989\u099C\u09BE\u09B0:</b> ${t.name}
+\u26A0\uFE0F \u098F\u0996\u09A8 \u09A5\u09C7\u0995\u09C7 \u09B8\u09CD\u09AC\u09BE\u09AD\u09BE\u09AC\u09BF\u0995 \u09A8\u09BF\u09AF\u09BC\u09AE \u09AA\u09CD\u09B0\u09AF\u09CB\u099C\u09CD\u09AF \u09B9\u09AC\u09C7`,
+      { parse_mode: "HTML" }
+    );
+    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 1e4);
   });
   bot2.onText(/^\/stats(@\w+)?$/i, async (msg) => {
     if (!msg.from || msg.chat.type === "private") return;
@@ -85255,12 +85387,12 @@ function registerCommands(bot2) {
     const reply = await bot2.sendMessage(
       msg.chat.id,
       `\u{1F4CA} <b>\u0997\u09CD\u09B0\u09C1\u09AA \u09AA\u09B0\u09BF\u09B8\u0982\u0996\u09CD\u09AF\u09BE\u09A8</b>
-
-\u{1F465} \u09AE\u09CB\u099F \u099F\u09CD\u09B0\u09CD\u09AF\u09BE\u0995 \u0995\u09B0\u09BE \u09B8\u09A6\u09B8\u09CD\u09AF: <b>${entries.length}</b>
-\u{1F7E2} \u099A\u09CD\u09AF\u09BE\u099F \u0986\u09A8\u09B2\u0995 \u09B9\u09AF\u09BC\u09C7\u099B\u09C7: <b>${unlocked}</b>
-\u{1F507} \u09AC\u09B0\u09CD\u09A4\u09AE\u09BE\u09A8\u09C7 \u09AE\u09BF\u0989\u099F: <b>${muted}</b>
-\u26A0\uFE0F \u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE \u0986\u099B\u09C7: <b>${warned}</b>
-\u{1F6AB} \u09AC\u09CD\u09AF\u09BE\u09A8 \u0995\u09B0\u09BE \u09B8\u09A6\u09B8\u09CD\u09AF: <b>${banned}</b>`,
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+\u{1F465} <b>\u09AE\u09CB\u099F \u09B8\u09A6\u09B8\u09CD\u09AF (\u099F\u09CD\u09B0\u09CD\u09AF\u09BE\u0995):</b> <b>${entries.length}</b>
+\u{1F7E2} <b>\u0987\u09A8\u09AD\u09BE\u0987\u099F \u09B8\u09AE\u09CD\u09AA\u09A8\u09CD\u09A8:</b> <b>${unlocked}</b>
+\u{1F507} <b>\u09AC\u09B0\u09CD\u09A4\u09AE\u09BE\u09A8\u09C7 \u09AE\u09BF\u0989\u099F:</b> <b>${muted}</b>
+\u26A0\uFE0F <b>\u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE \u0986\u099B\u09C7:</b> <b>${warned}</b>
+\u{1F6AB} <b>\u09AC\u09CD\u09AF\u09BE\u09A8 \u0995\u09B0\u09BE:</b> <b>${banned}</b>`,
       { parse_mode: "HTML" }
     );
     setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 2e4);
@@ -85276,7 +85408,8 @@ function registerCommands(bot2) {
         msg.chat.id,
         `\u{1F3C6} <b>\u0987\u09A8\u09AD\u09BE\u0987\u099F \u09B2\u09BF\u09A1\u09BE\u09B0\u09AC\u09CB\u09B0\u09CD\u09A1</b>
 
-\u098F\u0996\u09A8\u09CB \u0995\u09CB\u09A8\u09CB \u0987\u09A8\u09AD\u09BE\u0987\u099F \u09B0\u09C7\u0995\u09B0\u09CD\u09A1 \u09A8\u09C7\u0987\u0964 \u09AA\u09CD\u09B0\u09A5\u09AE \u09B9\u0993\u09AF\u09BC\u09BE\u09B0 \u09B8\u09C1\u09AF\u09CB\u0997 \u0986\u09AA\u09A8\u09BE\u09B0\u0987!`,
+\u{1F4ED} \u098F\u0996\u09A8\u09CB \u0995\u09CB\u09A8\u09CB \u09B0\u09C7\u0995\u09B0\u09CD\u09A1 \u09A8\u09C7\u0987\u0964
+\u09AA\u09CD\u09B0\u09A5\u09AE \u09B9\u0993\u09AF\u09BC\u09BE\u09B0 \u09B8\u09C1\u09AF\u09CB\u0997 \u0986\u09AA\u09A8\u09BE\u09B0\u0987!`,
         { parse_mode: "HTML" }
       );
       setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply2.message_id), 15e3);
@@ -85285,52 +85418,15 @@ function registerCommands(bot2) {
     const rows = ranked.map(([id, u], i) => {
       const medal = medals[i] ?? `<b>${i + 1}.</b>`;
       const name = u.firstName ? `<a href="tg://user?id=${id}">${u.firstName}</a>` : `<code>${id}</code>`;
-      const lock = u.invites >= CONFIG.REQUIRED_INVITES ? "\u{1F7E2}" : "\u{1F512}";
-      return `${medal} ${name} \u2014 <b>${u.invites}</b> \u099C\u09A8 ${lock}`;
+      return `${medal} ${name} \u2014 <b>${u.invites}</b> \u099C\u09A8`;
     });
     const reply = await bot2.sendMessage(
       msg.chat.id,
-      `\u{1F3C6} <b>\u09B6\u09C0\u09B0\u09CD\u09B7 \u0987\u09A8\u09AD\u09BE\u0987\u099F\u09BE\u09B0 \u2014 ${CONFIG.GROUP_NAME}</b>
-
+      `\u{1F3C6} <b>\u09B6\u09C0\u09B0\u09CD\u09B7 \u0987\u09A8\u09AD\u09BE\u0987\u099F\u09BE\u09B0</b>
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
 ` + rows.join("\n") + `
-
-\u{1F4AC} \u09AA\u09C7\u0987\u09A1 \u0997\u09CD\u09B0\u09C1\u09AA \u0995\u09BF\u09A8\u09B2\u09C7 \u09AE\u09C7\u09B8\u09C7\u099C \u09A6\u09BF\u09A8: ${CONFIG.PROMO_USERNAME}`,
-      { parse_mode: "HTML" }
-    );
-    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 3e4);
-  });
-  bot2.onText(/^\/help(@\w+)?$/i, async (msg) => {
-    if (!msg.from || msg.chat.type === "private") return;
-    const admins = await getGroupAdmins(bot2, msg.chat.id);
-    if (!admins.has(msg.from.id)) {
-      await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
-      return;
-    }
-    await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
-    const reply = await bot2.sendMessage(
-      msg.chat.id,
-      `\u{1F916} <b>\u0997\u09CD\u09B0\u09C1\u09AA \u0997\u09BE\u09B0\u09CD\u09A1 \u2014 \u0985\u09CD\u09AF\u09BE\u09A1\u09AE\u09BF\u09A8 \u0995\u09AE\u09BE\u09A8\u09CD\u09A1</b>
-
-\u{1F4A1} <b>\u09B8\u09AC \u0995\u09AE\u09BE\u09A8\u09CD\u09A1 reply \u0995\u09B0\u09C7 \u09AC\u09CD\u09AF\u09AC\u09B9\u09BE\u09B0 \u0995\u09B0\u09C1\u09A8</b>
-\u0995\u09BE\u09B0\u09CB \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 reply \u09A6\u09BF\u09AF\u09BC\u09C7 command \u099F\u09BE\u0987\u09AA \u0995\u09B0\u09C1\u09A8
-
-<b>\u{1F4CB} \u09A4\u09A5\u09CD\u09AF \u09A6\u09C7\u0996\u09C1\u09A8</b>
-/myinvites \u2014 \u09A8\u09BF\u099C\u09C7\u09B0 \u0987\u09A8\u09AD\u09BE\u0987\u099F \u0995\u09BE\u0989\u09A8\u09CD\u099F
-/invites \u2014 reply \u0995\u09B0\u09C7 \u09AF\u09C7\u0995\u09CB\u09A8\u09CB \u0987\u0989\u099C\u09BE\u09B0\u09C7\u09B0 \u09A4\u09A5\u09CD\u09AF
-/leaderboard \u2014 \u09B6\u09C0\u09B0\u09CD\u09B7 \u09E7\u09E6 \u0987\u09A8\u09AD\u09BE\u0987\u099F\u09BE\u09B0
-/stats \u2014 \u0997\u09CD\u09B0\u09C1\u09AA\u09C7\u09B0 \u09B8\u09BE\u09AE\u0997\u09CD\u09B0\u09BF\u0995 \u09AA\u09B0\u09BF\u09B8\u0982\u0996\u09CD\u09AF\u09BE\u09A8
-
-<b>\u{1F6E1}\uFE0F \u09AE\u09A1\u09BE\u09B0\u09C7\u09B6\u09A8 (reply \u0995\u09B0\u09C7 \u09AC\u09CD\u09AF\u09AC\u09B9\u09BE\u09B0 \u0995\u09B0\u09C1\u09A8)</b>
-/warn \u2014 \u09B8\u09A4\u09B0\u09CD\u0995 \u0995\u09B0\u09C1\u09A8
-/resetwarn \u2014 \u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE \u09AE\u09C1\u099B\u09C7 \u09A6\u09BF\u09A8
-/mute \u2014 \u09AE\u09BF\u0989\u099F \u0995\u09B0\u09C1\u09A8
-/unmute \u2014 \u09AE\u09BF\u0989\u099F \u09A4\u09C1\u09B2\u09C1\u09A8
-/kick \u2014 \u0995\u09BF\u0995 \u0995\u09B0\u09C1\u09A8
-/ban \u2014 \u09B8\u09CD\u09A5\u09BE\u09AF\u09BC\u09C0 \u09AC\u09CD\u09AF\u09BE\u09A8
-/unban [id] \u2014 \u09AC\u09CD\u09AF\u09BE\u09A8 \u09A4\u09C1\u09B2\u09C1\u09A8
-
-<b>\u{1F4B3} \u0995\u09CD\u09B0\u09C7\u09A1\u09BF\u099F</b>
-/addcredit [\u09AA\u09B0\u09BF\u09AE\u09BE\u09A3?] \u2014 \u0987\u09A8\u09AD\u09BE\u0987\u099F \u0995\u09CD\u09B0\u09C7\u09A1\u09BF\u099F \u09AF\u09CB\u0997 \u0995\u09B0\u09C1\u09A8`,
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+\u{1F4AC} \u09AA\u09C7\u0987\u09A1 \u0997\u09CD\u09B0\u09C1\u09AA: ${CONFIG.PROMO_USERNAME}`,
       { parse_mode: "HTML" }
     );
     setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 3e4);
@@ -85344,32 +85440,22 @@ function registerCommands(bot2) {
     }
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
     const all = getAllUsers();
-    const pending = Object.entries(all).filter(([id, u]) => {
-      if (u.banned) return false;
-      if (CONFIG.OWNER_IDS.includes(Number(id))) return false;
-      return u.invites < CONFIG.REQUIRED_INVITES;
-    }).sort(([, a], [, b]) => b.invites - a.invites);
+    const pending = Object.entries(all).filter(([id, u]) => !u.banned && !CONFIG.OWNER_IDS.includes(Number(id)) && u.invites < CONFIG.REQUIRED_INVITES).sort(([, a], [, b]) => b.invites - a.invites);
     if (pending.length === 0) {
-      const r = await bot2.sendMessage(
-        msg.chat.id,
-        `\u2705 \u09B8\u09AC member \u0987\u09A8\u09AD\u09BE\u0987\u099F \u0995\u09CB\u099F\u09BE \u09AA\u09C2\u09B0\u09A3 \u0995\u09B0\u09C7\u099B\u09C7\u09A8!`,
-        { parse_mode: "HTML" }
-      );
+      const r = await bot2.sendMessage(msg.chat.id, `\u2705 <b>\u09B8\u0995\u09B2 \u09B8\u09A6\u09B8\u09CD\u09AF \u0987\u09A8\u09AD\u09BE\u0987\u099F \u0995\u09CB\u099F\u09BE \u09AA\u09C2\u09B0\u09A3 \u0995\u09B0\u09C7\u099B\u09C7\u09A8!</b>`, { parse_mode: "HTML" });
       setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 1e4);
       return;
     }
     const rows = pending.slice(0, 20).map(([id, u]) => {
       const name = u.firstName ? `<a href="tg://user?id=${id}">${u.firstName}</a>` : `<code>${id}</code>`;
-      const remaining = CONFIG.REQUIRED_INVITES - u.invites;
-      return `\u{1F512} ${name} \u2014 ${u.invites}/${CONFIG.REQUIRED_INVITES} (\u0986\u09B0\u0993 <b>${remaining}</b> \u099C\u09A8 \u09AC\u09BE\u0995\u09BF)`;
+      return `\u{1F512} ${name} \u2014 <b>${u.invites}/${CONFIG.REQUIRED_INVITES}</b> (${CONFIG.REQUIRED_INVITES - u.invites} \u09AC\u09BE\u0995\u09BF)`;
     });
     const reply = await bot2.sendMessage(
       msg.chat.id,
-      `\u{1F512} <b>\u098F\u0996\u09A8\u09CB invite \u0995\u09CB\u099F\u09BE \u09AA\u09C2\u09B0\u09A3 \u0995\u09B0\u09C7\u09A8\u09A8\u09BF: ${pending.length} \u099C\u09A8</b>
-
+      `\u{1F512} <b>\u0987\u09A8\u09AD\u09BE\u0987\u099F \u0985\u09B8\u09AE\u09CD\u09AA\u09C2\u09B0\u09CD\u09A3 \u09B8\u09A6\u09B8\u09CD\u09AF: ${pending.length} \u099C\u09A8</b>
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
 ` + rows.join("\n") + (pending.length > 20 ? `
-
-<i>...\u098F\u09AC\u0982 \u0986\u09B0\u0993 ${pending.length - 20} \u099C\u09A8</i>` : ""),
+<i>...\u0986\u09B0\u0993 ${pending.length - 20} \u099C\u09A8</i>` : ""),
       { parse_mode: "HTML" }
     );
     setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 3e4);
@@ -85384,32 +85470,27 @@ function registerCommands(bot2) {
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
     const log = getInviteLog();
     const filterUserId = match?.[2] ? parseInt(match[2], 10) : null;
-    const filtered = filterUserId ? log.filter((e) => e.inviterId === filterUserId) : log.slice(-20);
+    const filtered = filterUserId ? log.filter((e) => e.inviterId === filterUserId) : log.slice(-15);
     if (filtered.length === 0) {
-      const r = await bot2.sendMessage(
-        msg.chat.id,
-        filterUserId ? `\u{1F4CB} \u0987\u0989\u099C\u09BE\u09B0 <code>${filterUserId}</code> \u098F\u0996\u09A8\u09CB \u0995\u09BE\u0989\u0995\u09C7 add \u0995\u09B0\u09C7\u09A8\u09A8\u09BF\u0964` : `\u{1F4CB} \u098F\u0996\u09A8\u09CB \u0995\u09CB\u09A8\u09CB invite \u09B0\u09C7\u0995\u09B0\u09CD\u09A1 \u09A8\u09C7\u0987\u0964`,
-        { parse_mode: "HTML" }
-      );
-      setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 1e4);
+      const r = await bot2.sendMessage(msg.chat.id, `\u{1F4CB} <b>\u0995\u09CB\u09A8\u09CB invite \u09B0\u09C7\u0995\u09B0\u09CD\u09A1 \u09AA\u09BE\u0993\u09AF\u09BC\u09BE \u09AF\u09BE\u09AF\u09BC\u09A8\u09BF\u0964</b>`, { parse_mode: "HTML" });
+      setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
       return;
     }
     const rows = filtered.slice(-15).reverse().map((e) => {
       const d = new Date(e.at);
       const time = `${d.getDate()}/${d.getMonth() + 1} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-      return `\u{1F464} <a href="tg://user?id=${e.inviterId}">${e.inviterName}</a> \u2192 <a href="tg://user?id=${e.inviteeId}">${e.inviteeName}</a> <i>${time}</i>`;
+      return `\u{1F464} <a href="tg://user?id=${e.inviterId}">${e.inviterName}</a> \u279C <a href="tg://user?id=${e.inviteeId}">${e.inviteeName}</a> <i>(${time})</i>`;
     });
-    const title = filterUserId ? `\u{1F4CB} <b>\u0987\u0989\u099C\u09BE\u09B0 ${filterUserId}-\u098F\u09B0 invite \u09A4\u09BE\u09B2\u09BF\u0995\u09BE</b>` : `\u{1F4CB} <b>\u09B8\u09B0\u09CD\u09AC\u09B6\u09C7\u09B7 \u09E7\u09EB\u099F\u09BF invite</b>`;
     const reply = await bot2.sendMessage(
       msg.chat.id,
-      `${title}
-
-${rows.join("\n")}`,
+      `\u{1F4CB} <b>Invite \u09B2\u0997${filterUserId ? ` \u2014 #${filterUserId}` : " (\u09B8\u09B0\u09CD\u09AC\u09B6\u09C7\u09B7 \u09E7\u09EB\u099F\u09BF)"}</b>
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+` + rows.join("\n"),
       { parse_mode: "HTML" }
     );
     setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 3e4);
   });
-  bot2.onText(/^\/allow(@\w+)?$/i, async (msg) => {
+  bot2.onText(/^\/broadcast(@\w+)?(?:\s+([\s\S]+))?$/i, async (msg, match) => {
     if (!msg.from || msg.chat.type === "private") return;
     const admins = await getGroupAdmins(bot2, msg.chat.id);
     if (!admins.has(msg.from.id)) {
@@ -85417,22 +85498,27 @@ ${rows.join("\n")}`,
       return;
     }
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
-    const t = msg.reply_to_message?.from;
-    if (!t) {
-      const r = await bot2.sendMessage(msg.chat.id, `\u274C \u0995\u09BE\u09B0\u09CB \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 reply \u0995\u09B0\u09C7 /allow \u09A6\u09BF\u09A8\u0964`, { parse_mode: "HTML" });
+    const text = match?.[2]?.trim();
+    if (!text) {
+      const r = await bot2.sendMessage(
+        msg.chat.id,
+        `\u274C <b>\u09AC\u09CD\u09AF\u09AC\u09B9\u09BE\u09B0:</b> <code>/broadcast [\u0986\u09AA\u09A8\u09BE\u09B0 \u09AC\u09BE\u09B0\u09CD\u09A4\u09BE]</code>`,
+        { parse_mode: "HTML" }
+      );
       setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
       return;
     }
-    addToWhitelist(t.id);
-    const reply = await bot2.sendMessage(
+    await bot2.sendMessage(
       msg.chat.id,
-      `\u2705 <a href="tg://user?id=${t.id}">${getDisplayName(t)}</a>-\u0995\u09C7 whitelist-\u098F \u09AF\u09CB\u0997 \u0995\u09B0\u09BE \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964
-\u09A4\u09BE\u09B0 \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 \u0986\u09B0 \u0995\u09CB\u09A8\u09CB \u09AC\u09BE\u09A7\u09BE \u09A5\u09BE\u0995\u09AC\u09C7 \u09A8\u09BE\u0964`,
+      `\u{1F4E2} <b>\u0997\u09CD\u09B0\u09C1\u09AA \u0985\u09CD\u09AF\u09BE\u09A8\u09BE\u0989\u09A8\u09CD\u09B8\u09AE\u09C7\u09A8\u09CD\u099F</b>
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+${text}
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+\u{1F4AC} \u09AA\u09C7\u0987\u09A1 \u0997\u09CD\u09B0\u09C1\u09AA: ${CONFIG.PROMO_USERNAME}`,
       { parse_mode: "HTML" }
     );
-    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 1e4);
   });
-  bot2.onText(/^\/disallow(@\w+)?$/i, async (msg) => {
+  bot2.onText(/^\/help(@\w+)?$/i, async (msg) => {
     if (!msg.from || msg.chat.type === "private") return;
     const admins = await getGroupAdmins(bot2, msg.chat.id);
     if (!admins.has(msg.from.id)) {
@@ -85440,19 +85526,38 @@ ${rows.join("\n")}`,
       return;
     }
     await deleteMessageSafe(bot2, msg.chat.id, msg.message_id);
-    const t = msg.reply_to_message?.from;
-    if (!t) {
-      const r = await bot2.sendMessage(msg.chat.id, `\u274C \u0995\u09BE\u09B0\u09CB \u09AE\u09C7\u09B8\u09C7\u099C\u09C7 reply \u0995\u09B0\u09C7 /disallow \u09A6\u09BF\u09A8\u0964`, { parse_mode: "HTML" });
-      setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, r.message_id), 8e3);
-      return;
-    }
-    removeFromWhitelist(t.id);
     const reply = await bot2.sendMessage(
       msg.chat.id,
-      `\u{1F512} <a href="tg://user?id=${t.id}">${getDisplayName(t)}</a>-\u0995\u09C7 whitelist \u09A5\u09C7\u0995\u09C7 \u09B8\u09B0\u09BE\u09A8\u09CB \u09B9\u09AF\u09BC\u09C7\u099B\u09C7\u0964`,
+      `\u{1F916} <b>\u0997\u09CD\u09B0\u09C1\u09AA \u0997\u09BE\u09B0\u09CD\u09A1 \u2014 \u0995\u09AE\u09BE\u09A8\u09CD\u09A1 \u09A4\u09BE\u09B2\u09BF\u0995\u09BE</b>
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+\u{1F4A1} <b>reply \u0995\u09B0\u09C1\u09A8 \u0985\u09A5\u09AC\u09BE [user_id] \u09A6\u09BF\u09A8</b>
+
+<b>\u{1F4CB} \u09A4\u09A5\u09CD\u09AF</b>
+\u25B8 /info \u2014 \u09B8\u09AE\u09CD\u09AA\u09C2\u09B0\u09CD\u09A3 \u0987\u0989\u099C\u09BE\u09B0 \u09A4\u09A5\u09CD\u09AF + ID
+\u25B8 /myinvites \u2014 \u09A8\u09BF\u099C\u09C7\u09B0 \u0987\u09A8\u09AD\u09BE\u0987\u099F \u0995\u09BE\u0989\u09A8\u09CD\u099F
+\u25B8 /invites \u2014 \u09AF\u09C7\u0995\u09CB\u09A8\u09CB \u0987\u0989\u099C\u09BE\u09B0\u09C7\u09B0 \u09A4\u09A5\u09CD\u09AF
+\u25B8 /leaderboard \u2014 \u09B6\u09C0\u09B0\u09CD\u09B7 \u09E7\u09E6 \u0987\u09A8\u09AD\u09BE\u0987\u099F\u09BE\u09B0
+\u25B8 /stats \u2014 \u0997\u09CD\u09B0\u09C1\u09AA \u09AA\u09B0\u09BF\u09B8\u0982\u0996\u09CD\u09AF\u09BE\u09A8
+\u25B8 /pending \u2014 \u0987\u09A8\u09AD\u09BE\u0987\u099F \u0985\u09B8\u09AE\u09CD\u09AA\u09C2\u09B0\u09CD\u09A3 \u09B8\u09A6\u09B8\u09CD\u09AF
+\u25B8 /invitelog \u2014 \u0995\u09C7 \u0995\u09BE\u0995\u09C7 add \u0995\u09B0\u09C7\u099B\u09C7
+
+<b>\u{1F6E1}\uFE0F \u09AE\u09A1\u09BE\u09B0\u09C7\u09B6\u09A8</b>
+\u25B8 /warn [\u0995\u09BE\u09B0\u09A3] \u2014 \u09B8\u09A4\u09B0\u09CD\u0995 \u0995\u09B0\u09C1\u09A8
+\u25B8 /resetwarn \u2014 \u09B8\u09A4\u09B0\u09CD\u0995\u09A4\u09BE \u09AE\u09C1\u099B\u09C1\u09A8
+\u25B8 /mute [\u0998\u09A3\u09CD\u099F\u09BE] \u2014 \u09AE\u09BF\u0989\u099F \u0995\u09B0\u09C1\u09A8
+\u25B8 /unmute \u2014 \u09AE\u09BF\u0989\u099F \u09A4\u09C1\u09B2\u09C1\u09A8
+\u25B8 /kick [\u0995\u09BE\u09B0\u09A3] \u2014 \u0995\u09BF\u0995 \u0995\u09B0\u09C1\u09A8
+\u25B8 /ban [\u0995\u09BE\u09B0\u09A3] \u2014 \u09B8\u09CD\u09A5\u09BE\u09AF\u09BC\u09C0 \u09AC\u09CD\u09AF\u09BE\u09A8
+\u25B8 /unban \u2014 \u09AC\u09CD\u09AF\u09BE\u09A8 \u09A4\u09C1\u09B2\u09C1\u09A8
+
+<b>\u2699\uFE0F \u0985\u09A8\u09CD\u09AF\u09BE\u09A8\u09CD\u09AF</b>
+\u25B8 /allow \u2014 Whitelist-\u098F \u09AF\u09CB\u0997 \u0995\u09B0\u09C1\u09A8
+\u25B8 /disallow \u2014 Whitelist \u09A5\u09C7\u0995\u09C7 \u09B8\u09B0\u09BE\u09A8
+\u25B8 /addcredit [\u09AA\u09B0\u09BF\u09AE\u09BE\u09A3] \u2014 \u0995\u09CD\u09B0\u09C7\u09A1\u09BF\u099F \u09AF\u09CB\u0997 \u0995\u09B0\u09C1\u09A8
+\u25B8 /broadcast [\u09AC\u09BE\u09B0\u09CD\u09A4\u09BE] \u2014 \u09B8\u09AC\u09BE\u0987\u0995\u09C7 \u0985\u09CD\u09AF\u09BE\u09A8\u09BE\u0989\u09A8\u09CD\u09B8 \u0995\u09B0\u09C1\u09A8`,
       { parse_mode: "HTML" }
     );
-    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 1e4);
+    setTimeout(() => deleteMessageSafe(bot2, msg.chat.id, reply.message_id), 4e4);
   });
   bot2.on("my_chat_member", (msg) => {
     invalidateAdminCache(msg.chat.id);
